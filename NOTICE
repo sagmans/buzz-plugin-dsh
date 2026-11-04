@@ -23,10 +23,15 @@ DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says.
 The build (plugin/plugin.js, made on the user's computer) bundles the
 noble-curves and noble-hashes libraries by Paul Miller, and React, React
 DOM, Base UI, Floating UI, Motion and Tabler Icons for the views, and
-react-markdown, remark-gfm (with the unified, micromark and mdast libraries
-they use) and fzstd for the transcripts, each licensed under the MIT License
+react-markdown and remark-gfm (with the unified, micromark and mdast libraries
+they use) for the transcripts, each licensed under the MIT License
 (@ungap/structured-clone: ISC; tslib: 0BSD). Their license notices stay in
 the build.
+
+The build also bundles @hpcc-js/wasm-zstd by HPCC Systems, licensed under the
+Apache License, Version 2.0, for the transcripts. It holds a WebAssembly build
+of Zstandard by Meta Platforms, Inc., licensed under the BSD License:
+https://github.com/facebook/zstd
 
 DeepSeek Harness (dsh) is a separate program. This plugin does not include
 it; it starts the copy that the user installed.

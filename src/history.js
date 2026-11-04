@@ -2,7 +2,7 @@
 // server cannot replay a session (it has no `session/load`, and `session/resume`
 // sends no history), so the file is the only record. The plugin only reads it:
 // dsh owns the format and the folder.
-import { Decompress } from "fzstd";
+import { Zstd } from "@hpcc-js/wasm-zstd";
 import { SessionTurns } from "./transcript.js";
 
 /** The latest turns shown; the file keeps the rest. */
@@ -18,10 +18,14 @@ const SESSION_ID = /^[0-9A-Za-z_-]{1,128}$/;
 /** What `host.readFile` says when dsh has no such session. */
 const MISSING = /no such file|could not find|not found/i;
 /** What the decoder says when dsh was still writing the last frame. */
-const CUT_SHORT = /unexpected EOF/i;
-/** Compressed bytes decoded before the app gets a turn: the decoder runs on the
- * app's main thread, and a long session must not freeze the window. */
-const SLICE_BYTES = 256 * 1024;
+const CUT_SHORT = /truncated Zstandard input/i;
+/** Compressed bytes given to the decoder at once. Zstd can inflate about 32,000
+ * times, and the decoder returns all of a slice's output together: a small slice
+ * keeps one call near 130 MiB, before `DECODED_LIMIT` can refuse the file. */
+const SLICE_BYTES = 4 * 1024;
+/** Slices decoded before the app gets a turn: the decoder runs on the app's main
+ * thread, and a long session must not freeze the window. */
+const SLICES_PER_TURN = 64;
 /** A session file larger than this when decoded is refused, not read. The host
  * already caps the compressed file. */
 const DECODED_LIMIT = 512 * 1024 * 1024;
@@ -64,29 +68,42 @@ export function projectKey(cwd) {
 const nextTask = () => new Promise((resolve) => setTimeout(resolve));
 
 /** Gives each complete line of a zstd file to `onLine`. dsh appends one frame at
- * a time, so a file read mid-write ends in a cut frame: what came before stands. */
+ * a time, so a file read mid-write ends in a cut frame: what came before stands.
+ * A file dsh has just created holds no frame yet, which is an empty session. */
 async function readLines(bytes, onLine, signal) {
+  if (!bytes.length) return;
+  const zstd = await Zstd.load();
+  zstd.resetDecompression();
   const decoder = new TextDecoder();
   let pending = "";
   let size = 0;
-  const stream = new Decompress((chunk) => {
+  for (let slice = 0; slice * SLICE_BYTES < bytes.length; slice += 1) {
+    signal.throwIfAborted();
+    const start = slice * SLICE_BYTES;
+    const chunk = zstd.decompressChunk(bytes.subarray(start, start + SLICE_BYTES));
     size += chunk.length;
     if (size > DECODED_LIMIT) throw new DshHistoryError(`the session is over ${DECODED_LIMIT} bytes`);
     const lines = (pending + decoder.decode(chunk, { stream: true })).split("\n");
     pending = lines.pop() ?? "";
     for (const line of lines) onLine(line);
-  });
-  for (let start = 0; start < bytes.length; start += SLICE_BYTES) {
-    signal.throwIfAborted();
-    const end = Math.min(start + SLICE_BYTES, bytes.length);
-    const last = end === bytes.length;
-    try {
-      stream.push(bytes.subarray(start, end), last);
-    } catch (error) {
-      if (!last || !CUT_SHORT.test(String(error))) throw error;
-    }
-    if (!last) await nextTask();
+    if ((slice + 1) % SLICES_PER_TURN === 0) await nextTask();
   }
+  try {
+    zstd.decompressEnd();
+  } catch (error) {
+    if (!CUT_SHORT.test(String(error))) throw error;
+  }
+}
+
+/** The end of the last read in the queue. `Zstd.load()` gives one decoder with one
+ * stream for the whole app, and `readLines` yields between slices: two tabs that
+ * read at once would mix their bytes without this queue. */
+let lastRead = Promise.resolve();
+
+function readLinesInTurn(bytes, onLine, signal) {
+  const read = lastRead.then(() => readLines(bytes, onLine, signal));
+  lastRead = read.catch(() => undefined);
+  return read;
 }
 
 export class DshHistory {
@@ -106,7 +123,7 @@ export class DshHistory {
       throw error;
     }
     const fold = new SessionTurns(sessionId, place, TURN_LIMIT);
-    await readLines(
+    await readLinesInTurn(
       bytes,
       (line) => {
         try {

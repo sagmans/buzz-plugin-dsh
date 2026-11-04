@@ -9,9 +9,9 @@
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
+    "@hpcc-js/wasm-zstd": "1.17.0",
     "@noble/curves": "2.0.1",
     "@tabler/icons-react": "3.46.0",
-    "fzstd": "0.1.1",
     "motion": "12.40.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
