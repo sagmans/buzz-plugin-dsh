@@ -8,7 +8,12 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@noble/curves": "2.0.1"
+    "@base-ui/react": "1.9.0",
+    "@noble/curves": "2.0.1",
+    "@tabler/icons-react": "3.46.0",
+    "motion": "12.40.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "vite": "8.3.4"

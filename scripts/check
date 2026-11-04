@@ -16,6 +16,10 @@
 #   A git worktree is judged by its tracked files only; any other directory
 #   (the exported index at pre-commit) by every regular file in it.
 #
+# The full run needs a buzz-app clone at the pinned revision with its
+# dependencies installed (README.md, Build): BUZZ_APP_DIR, else the clone this
+# checkout's buzz-app link points to.
+#
 # Every check fails closed: a missing tool, a tool error or a finding exits 1.
 # A check whose input is absent from DIR (for example an older commit without
 # the plugin) is skipped, because there is nothing for it to judge.
@@ -36,6 +40,9 @@ SMOKE=scripts/smoke.mjs
 ENTRY=src/plugin.js
 BUILD=scripts/build-plugin.mjs
 LOCKFILE=pnpm-lock.yaml
+LINK_TOOLCHAIN=scripts/link-toolchain
+# The buzz-app clone link that LINK_TOOLCHAIN makes; never judged as ours.
+TOOLCHAIN_LINK=buzz-app
 PNPM_MIN_VERSION=12.0.0
 # A frozen install from the lockfile; the network may be slow, never endless.
 PNPM_INSTALL_TIMEOUT_SECONDS=300
@@ -104,7 +111,7 @@ list_files() {
 	if [ "$(git rev-parse --show-toplevel 2>/dev/null || true)" = "$target" ]; then
 		git ls-files -z
 	else
-		find . -type f -print0
+		find . -type f -not -path "./$TOOLCHAIN_LINK/*" -not -path './node_modules/*' -print0
 	fi
 }
 
@@ -204,6 +211,29 @@ install_dependencies() {
 		fail "pnpm install --frozen-lockfile failed (lockfile out of date, network error or timeout)"
 }
 
+# The buzz-app clone the plugin builds with: BUZZ_APP_DIR, else this
+# checkout's link. A full check without it cannot build the plugin.
+toolchain_clone() {
+	if [ -n "${BUZZ_APP_DIR:-}" ]; then
+		printf '%s\n' "$BUZZ_APP_DIR"
+	elif [ -L "$REPO_TOP/$TOOLCHAIN_LINK" ]; then
+		(cd "$REPO_TOP/$TOOLCHAIN_LINK" && pwd -P)
+	else
+		return 1
+	fi
+}
+
+# The views bundle buzz-app modules from the clone; the pre-push hook's
+# temporary worktree has no link of its own, so it gets this checkout's.
+link_toolchain() {
+	has_file "$LINK_TOOLCHAIN" || return 0
+	local clone
+	clone="$(toolchain_clone)" || fail "no buzz-app clone: set BUZZ_APP_DIR or run $LINK_TOOLCHAIN <clone> (README.md, Build)"
+	if [ "$(cd "$target/$TOOLCHAIN_LINK" 2>/dev/null && pwd -P)" != "$(cd "$clone" && pwd -P)" ]; then
+		"./$LINK_TOOLCHAIN" "$clone" >/dev/null || fail "cannot link the buzz-app clone $clone"
+	fi
+}
+
 # The build goes to a folder of its own, so a check never rewrites the
 # plugin/ folder that a running Buzz app may have installed.
 build_dir=""
@@ -271,7 +301,7 @@ check_semgrep() {
 check_trivy() {
 	require_tool "$CHECK" trivy "$TRIVY_MIN_VERSION" 'install trivy (https://trivy.dev)' trivy --version
 	run_with_timeout "$TRIVY_TIMEOUT_SECONDS" trivy fs --quiet --scanners secret,misconfig \
-		--skip-dirs .git --exit-code 1 --timeout "${TRIVY_TIMEOUT_SECONDS}s" . ||
+		--skip-dirs .git --skip-dirs "$TOOLCHAIN_LINK" --skip-dirs node_modules --exit-code 1 --timeout "${TRIVY_TIMEOUT_SECONDS}s" . ||
 		fail "trivy found secrets or misconfigurations (or failed to run)"
 }
 
@@ -282,6 +312,7 @@ check_private_data
 if [ "$quick" -eq 1 ]; then
 	exit 0
 fi
+link_toolchain
 install_dependencies
 check_build
 check_smoke

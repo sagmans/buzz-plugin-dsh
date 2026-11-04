@@ -6,6 +6,11 @@
 minimumReleaseAge: 20160
 minimumReleaseAgeStrict: true
 
+# A flat node_modules: the build keeps symlinks (vite.config.js), so every
+# package, also a dependency of a dependency, must be found by a plain walk
+# up from node_modules.
+nodeLinker: hoisted
+
 # Install scripts stay off, and a package that asks for one stops the install:
 # none of these packages needs one to build.
 strictDepBuilds: true
