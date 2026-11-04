@@ -1,0 +1,15 @@
+{
+  "id": "sagmans.dsh",
+  "name": "DSH",
+  "apiVersion": 1,
+  "description": "Run local DeepSeek Harness (dsh) agents in Buzz through the dsh ACP server. Each thread is one continuing dsh session.",
+  "discovery": {
+    "category": "agents",
+    "tags": ["code", "coding-agents"]
+  },
+  "host": {
+    "processes": [{ "id": "dsh-acp", "program": "dsh", "args": ["--profile"] }],
+    "mcp": true,
+    "files": true
+  }
+}
