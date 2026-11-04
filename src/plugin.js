@@ -28,6 +28,8 @@
 
 import { config, DEFAULT_CONFIG, modelLabel } from "./config.js";
 import { fromOwner } from "./owner.js";
+import { createActivity } from "./activity.js";
+import { DshHistory } from "./history.js";
 import { bindReact } from "./react-host.js";
 import { createViews, DeepSeekLogoIcon } from "./views.js";
 
@@ -67,6 +69,11 @@ const MAX_MENTIONS = 20;
 const READ_DEFAULT = 30;
 const READ_MAX = 100;
 const STORAGE_PREFIX = `${PLUGIN_ID}/sessions/`;
+/** Every session an agent started, newest first: the row above holds only a
+ * conversation's current one, and New session drops it. */
+const SESSION_LOG_PREFIX = `${PLUGIN_ID}/session-log/`;
+/** Sessions the log keeps per agent; the oldest are forgotten. */
+const SESSION_LOG_LIMIT = 200;
 // JSON-RPC error codes the plugin answers with.
 const RPC_METHOD_NOT_FOUND = -32601;
 const RPC_INVALID_PARAMS = -32602;
@@ -521,6 +528,7 @@ export class DshRuntime {
     this.sessions = new Map();
     this.listeners = new Set();
     this.catalog = [];
+    this.activityRows = new Map();
   }
 
   subscribe(listener) {
@@ -529,6 +537,7 @@ export class DshRuntime {
   }
 
   notify() {
+    this.activityRows.clear();
     for (const listener of this.listeners) listener();
   }
 
@@ -579,6 +588,51 @@ export class DshRuntime {
     }
   }
 
+  sessionLog(agentKey) {
+    try {
+      const value = JSON.parse(this.agents.storage.get(`${SESSION_LOG_PREFIX}${agentKey}`) ?? "[]");
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** The folder a session ran in stays with it: dsh files a session by its folder,
+   * and the agent's workspace setting can change after. */
+  async logSession(agentKey, row) {
+    const rows = [row, ...this.sessionLog(agentKey)].slice(0, SESSION_LOG_LIMIT);
+    await this.agents.storage.set(`${SESSION_LOG_PREFIX}${agentKey}`, JSON.stringify(rows));
+  }
+
+  /** The agent's sessions for the Activity tab, newest first. The same array
+   * until something changes, as `useSyncExternalStore` needs. */
+  activity(agentKey) {
+    let rows = this.activityRows.get(agentKey);
+    if (!rows) {
+      rows = this.readActivity(agentKey);
+      this.activityRows.set(agentKey, rows);
+    }
+    return rows;
+  }
+
+  /** Forgets the snapshot, so a Refresh sees what another window stored. */
+  refreshActivity(agentKey) {
+    this.activityRows.delete(agentKey);
+  }
+
+  readActivity(agentKey) {
+    const rows = new Map(this.sessionLog(agentKey).map((row) => [row.sessionId, row]));
+    // A session from before the log existed has only its current-session row.
+    for (const [key, saved] of Object.entries(this.saved(agentKey)))
+      if (saved?.id && !rows.has(saved.id)) rows.set(saved.id, { sessionId: saved.id, key, at: saved.at });
+    const busy = new Map();
+    for (const [key, record] of this.sessions)
+      if (key.startsWith(`${agentKey}|`)) busy.set(record.id, record.busy);
+    return [...rows.values()]
+      .map((row) => (busy.has(row.sessionId) ? { ...row, busy: busy.get(row.sessionId) } : row))
+      .sort((a, b) => b.at - a.at);
+  }
+
   async remember(agentKey, conversation, id) {
     const all = this.saved(agentKey);
     if (id) all[conversation] = { id, at: Date.now() };
@@ -595,7 +649,7 @@ export class DshRuntime {
     if (live) await this.close(key);
     const acp = await this.connection(settings.profile);
     const cwd = await this.host.resolveDirectory(settings.workspace);
-    const record = new SessionRecord({ acp, place, cwd, profile: settings.profile });
+    const record = new SessionRecord({ acp, place, cwd, profile: settings.profile, onBusy: () => this.notify() });
     const tools = createTools(place, () => record.handle);
     record.mcp = await this.host.serveMcp(tools.handler);
     const mcpServers = [{ type: "http", name: MCP_SERVER_NAME, url: record.mcp.url, headers: record.mcp.headers }];
@@ -630,6 +684,7 @@ export class DshRuntime {
     record.adopt(result.sessionId, result.configOptions, true);
     this.learn(result.configOptions);
     await this.remember(agentKey, conversation, result.sessionId);
+    await this.logSession(agentKey, { sessionId: result.sessionId, key: conversation, at: Date.now(), cwd: params.cwd });
   }
 
   /** Keeps the model list dsh offers, for the settings picker. */
@@ -690,7 +745,8 @@ function allowOnce(options) {
 
 /** One ACP session: one conversation of one agent. */
 class SessionRecord {
-  constructor({ acp, place, cwd, profile }) {
+  constructor({ acp, place, cwd, profile, onBusy }) {
+    this.onBusy = onBusy;
     this.acp = acp;
     this.place = place;
     this.cwd = cwd;
@@ -729,6 +785,7 @@ class SessionRecord {
     const run = async () => {
       this.busy = true;
       this.turn = turn;
+      this.onBusy();
       const limit = setTimeout(() => this.cancel(), PROMPT_MAX_MS);
       try {
         const result = await this.acp.request(
@@ -746,6 +803,7 @@ class SessionRecord {
         clearTimeout(limit);
         this.busy = false;
         this.turn = undefined;
+        this.onBusy();
       }
     };
     const outcome = this.tail.then(run, run);
@@ -838,6 +896,7 @@ export function apply(ctx) {
     runtime.stop().catch((error) => log("stop", error));
   });
   const { Create, CreateModel, SettingsTab } = createViews(runtime);
+  const ActivityTab = createActivity(runtime, new DshHistory(host), (saved) => config(saved).workspace);
   agents.register({
     id: TYPE_ID,
     title: "DSH",
@@ -850,6 +909,7 @@ export function apply(ctx) {
       // Identity and runtime fields in their own Settings sections, as the
       // app's own agent types show them.
       { id: "settings", title: "Settings", role: "settings", splitSettings: true, component: SettingsTab },
+      { id: "activity", title: "Activity", role: "activity", component: ActivityTab },
     ],
     summary: (agent) => {
       const { model } = config(agent.config);
