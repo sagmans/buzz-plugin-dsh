@@ -26,7 +26,13 @@
 // Buzz's own agents (src/owner.js). Watches and timers are not run (no
 // standalone turns in this version).
 
+import { config, DEFAULT_CONFIG, modelLabel } from "./config.js";
 import { fromOwner } from "./owner.js";
+import { bindReact } from "./react-host.js";
+import { createViews, DeepSeekLogoIcon } from "./views.js";
+
+// The smoke scenarios check the config rules through the built module.
+export { config };
 
 // Cordis starts apply() only after these host services exist.
 export const inject = ["react", "agents", "host"];
@@ -44,18 +50,8 @@ const PLUGIN_VERSION = "0.1.0";
 const CHAT_KIND = 9;
 const REACTION_KIND = 7;
 const HEX64 = /^[0-9a-f]{64}$/;
-// A profile name becomes a process argument: never let it look like a flag.
-const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 // Buzz channel ids are UUIDs or short slugs; nothing else reaches a filter.
 const CHANNEL_RE = /^[A-Za-z0-9_-]{1,128}$/;
-const EFFORTS = ["", "off", "low", "high", "max"];
-const DEFAULT_CONFIG = Object.freeze({
-  profile: "acp",
-  model: "",
-  effort: "",
-  instructions: "",
-  workspace: "~/dsh-agents",
-});
 // Control requests (initialize, session/new, resume, config) must not hang a run.
 const REQUEST_TIMEOUT_MS = 120_000;
 // The longest one prompt may work before the plugin cancels it.
@@ -101,32 +97,6 @@ const errorText = (error) => (error instanceof Error ? error.message : String(er
 
 const log = (operation, error, details) =>
   console.error(`[${PLUGIN_ID}] ${operation} failed`, { ...details, error: errorText(error) });
-
-// ---- Config -----------------------------------------------------------------
-
-/** A saved config with every field present and each field valid. */
-export function config(value) {
-  const raw = value && typeof value === "object" ? value : {};
-  const pick = (key, ok) => (typeof raw[key] === "string" && ok(raw[key]) ? raw[key] : DEFAULT_CONFIG[key]);
-  return {
-    profile: pick("profile", (v) => PROFILE_RE.test(v)),
-    model: pick("model", (v) => v.length <= 512),
-    effort: pick("effort", (v) => EFFORTS.includes(v)),
-    instructions: pick("instructions", () => true),
-    workspace: pick("workspace", (v) => v.startsWith("/") || v.startsWith("~/")),
-  };
-}
-
-/** The model's display name inside an ACP select value such as `["provider","model"]`. */
-function modelLabel(value) {
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed.filter((part) => typeof part === "string").join(" · ");
-  } catch {
-    // Not JSON: the value is shown as the user wrote it.
-  }
-  return value;
-}
 
 // ---- Nostr helpers ----------------------------------------------------------
 
@@ -847,100 +817,12 @@ export function createRun(runtime, agents) {
   };
 }
 
-// ---- Views ------------------------------------------------------------------
-
-function createViews(React, runtime) {
-  const h = React.createElement;
-  const label = { display: "grid", gap: 4, marginBottom: 12 };
-  const input = { font: "inherit", padding: 6 };
-
-  function useCatalog() {
-    const [catalog, setCatalog] = React.useState(runtime.catalog);
-    React.useEffect(() => runtime.subscribe(() => setCatalog(runtime.catalog)), []);
-    return catalog;
-  }
-
-  function Field({ title, children }) {
-    return h("label", { style: label }, h("span", null, title), children);
-  }
-
-  function ModelField({ value, disabled, onChange }) {
-    const catalog = useCatalog();
-    if (!catalog.length)
-      return h("input", {
-        style: input,
-        value,
-        disabled,
-        placeholder: "Default of the dsh profile",
-        onChange: (event) => onChange(event.target.value),
-      });
-    const known = catalog.some((item) => item.value === value);
-    return h(
-      "select",
-      { style: input, value, disabled, onChange: (event) => onChange(event.target.value) },
-      h("option", { value: "" }, "Default of the dsh profile"),
-      !known && value ? h("option", { value }, modelLabel(value)) : null,
-      ...catalog.map((item) => h("option", { key: item.value, value: item.value }, `${item.name} (${modelLabel(item.value)})`)),
-    );
-  }
-
-  /** Every config field; `onChange` gets the whole new config. */
-  function Form({ value, disabled, onChange }) {
-    const set = (key) => (next) => onChange({ ...value, [key]: next });
-    const text = (key, extra = {}) => ({
-      style: input,
-      value: value[key],
-      disabled,
-      onChange: (event) => set(key)(event.target.value),
-      ...extra,
-    });
-    return h(
-      "div",
-      null,
-      h(Field, { title: "Model" }, h(ModelField, { value: value.model, disabled, onChange: set("model") })),
-      h(
-        Field,
-        { title: "Reasoning effort" },
-        h("select", text("effort"), ...EFFORTS.map((effort) => h("option", { key: effort, value: effort }, effort || "Default"))),
-      ),
-      h(Field, { title: "Workspace (absolute or ~/ path)" }, h("input", text("workspace"))),
-      h(Field, { title: "dsh profile" }, h("input", text("profile"))),
-      h(Field, { title: "Instructions" }, h("textarea", text("instructions", { rows: 8 }))),
-    );
-  }
-
-  function Create({ config: value, onChange, disabled }) {
-    return h(Form, { value: config(value), disabled, onChange });
-  }
-
-  function SettingsTab({ agent, save }) {
-    const [draft, setDraft] = React.useState(() => config(agent.config));
-    const [status, setStatus] = React.useState("");
-    const valid = JSON.stringify(config(draft)) === JSON.stringify(draft);
-    const submit = () => {
-      setStatus("Saving…");
-      save({ ...agent.config, ...draft }).then(
-        () => setStatus("Saved. New sessions use it; open sessions apply model and effort on the next turn."),
-        (error) => setStatus(`Save failed: ${errorText(error)}`),
-      );
-    };
-    return h(
-      "div",
-      { style: { padding: 12 } },
-      h(Form, { value: draft, disabled: false, onChange: setDraft }),
-      h("button", { type: "button", disabled: !valid, onClick: submit }, "Save"),
-      valid ? null : h("p", null, "A field is invalid: the profile is lowercase letters, digits, - or _; the workspace is absolute or starts with ~/."),
-      status ? h("p", { role: "status" }, status) : null,
-    );
-  }
-
-  return { Create, SettingsTab };
-}
-
 // ---- Plugin entry -----------------------------------------------------------
 
 export function apply(ctx) {
   const { agents, host } = ctx;
+  // First: the bundled buzz-app views must render with Buzz's React.
+  bindReact(ctx.react);
   // Only the desktop app can start processes and serve MCP.
   if (!host?.spawn || !host.serveMcp || !host.resolveDirectory) return;
   const runtime = new DshRuntime({ host, agents });
@@ -955,14 +837,20 @@ export function apply(ctx) {
     unsubscribe();
     runtime.stop().catch((error) => log("stop", error));
   });
-  const { Create, SettingsTab } = createViews(ctx.react, runtime);
+  const { Create, CreateModel, SettingsTab } = createViews(runtime);
   agents.register({
     id: TYPE_ID,
     title: "DSH",
     description: "DeepSeek Harness on this computer, through its ACP server. Each thread it is mentioned in is one continuing session.",
     defaults: () => ({ config: { ...DEFAULT_CONFIG } }),
+    icon: DeepSeekLogoIcon,
     Create,
-    tabs: [{ id: "settings", title: "Settings", role: "settings", component: SettingsTab }],
+    CreateModel,
+    tabs: [
+      // Identity and runtime fields in their own Settings sections, as the
+      // app's own agent types show them.
+      { id: "settings", title: "Settings", role: "settings", splitSettings: true, component: SettingsTab },
+    ],
     summary: (agent) => {
       const { model } = config(agent.config);
       return model ? `DSH · ${modelLabel(model)}` : "DSH";

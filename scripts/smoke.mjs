@@ -191,7 +191,8 @@ function delivery(handle, event, extra = {}) {
 async function scenarioRegister(plugin) {
   const name = "register";
   const agents = createAgents();
-  const ctx = { agents, host: createHost(), react: {}, effect: () => undefined, pluginOwner: { id: "sagmans.dsh" } };
+  // The pinned React, the version Buzz runs: apply() checks it.
+  const ctx = { agents, host: createHost(), react: (await import("react")).default, effect: () => undefined, pluginOwner: { id: "sagmans.dsh" } };
   plugin.apply(ctx);
   const [type] = agents.registered;
   if (!type || type.id !== "dsh" || typeof type.run !== "function") throw new SmokeFailure(name, "no DSH agent type");
