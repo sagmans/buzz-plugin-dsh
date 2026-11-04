@@ -18,6 +18,9 @@ agent in is one continuing dsh session.
 | Each turn | dsh gets the message and its place (channel, thread root). The agent answers with `send`. |
 | The turn ends | Buzz shows the agent as idle again. **Stop** cancels a running turn. |
 
+The Activity tab shows the agent's recent sessions and their transcripts. It
+reads the session files of dsh and never changes them.
+
 The Buzz tools act as the agent. The agent key stays in Buzz: the tools
 reach dsh through a loopback MCP server that Buzz serves for the plugin.
 
@@ -105,7 +108,14 @@ there.
   uploads, edits, canvas or memory tools.
 - `read` shows pubkeys, not display names.
 - Compact is not supported. **New session** starts the thread over.
-- Session history is not shown in the app. dsh keeps it in its own storage.
+- The Activity tab reads sessions from `~/.dsh/sessions`, in dsh's internal
+  format. It does not see a custom dsh home. A new dsh format shows
+  "no session" until the plugin follows it. dsh's own reminders and team
+  messages are not shown. A conversation shows as a short id, because the
+  plugin API does not give channel names to this tab.
+- An open transcript replaces the Activity tab's content, with a back button.
+  The app's own agents open it in a panel tab. The plugin API does not give
+  that part of the app to plugins.
 - The Settings tab does not warn about unsaved changes when you leave it.
   The plugin API does not give that part of the app to plugins.
 

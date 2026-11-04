@@ -10,6 +10,8 @@ https://github.com/block/buzz-app
   header comment.
 - src/views.js: the New agent and Settings views follow
   src/bundled/goose/tabs.tsx, built from the same buzz-app components.
+- src/activity.js, src/history.js and src/transcript.js: the Activity tab follows
+  src/bundled/goose/tabs.tsx and src/bundled/goose/transcript.ts.
 - src/react-host.js and src/save-footer.js: the same modules as in
   buzz-plugin-opencode, which hold no buzz-app code of their own.
 
@@ -20,8 +22,11 @@ DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says.
 
 The build (plugin/plugin.js, made on the user's computer) bundles the
 noble-curves and noble-hashes libraries by Paul Miller, and React, React
-DOM, Base UI, Floating UI, Motion and Tabler Icons for the views, each
-licensed under the MIT License. Their license notices stay in the build.
+DOM, Base UI, Floating UI, Motion and Tabler Icons for the views, and
+react-markdown, remark-gfm (with the unified, micromark and mdast libraries
+they use) and fzstd for the transcripts, each licensed under the MIT License
+(@ungap/structured-clone: ISC; tslib: 0BSD). Their license notices stay in
+the build.
 
 DeepSeek Harness (dsh) is a separate program. This plugin does not include
 it; it starts the copy that the user installed.
