@@ -43,6 +43,13 @@ const buzzLink = resolve(here, BUZZ_APP_LINK);
 // folder to compare.
 const OUT_DIR_ENV = "DSH_PLUGIN_OUT_DIR";
 
+/** The markdown parser's dependency whose browser build calls `document` when
+ * it loads. Its plain build decodes the same names from a table. The plugin
+ * module must load without a DOM: the smoke run loads it in Node. */
+const DOM_AT_LOAD = "decode-named-character-reference";
+const DOM_BUILD = /index\.dom\.js$/;
+const PLAIN_BUILD = "index.js";
+
 /** True when `file` is inside `dir`. */
 function inside(dir, file) {
   const path = relative(dir, file);
@@ -97,6 +104,19 @@ function ownDependencies() {
   };
 }
 
+/** Resolves DOM_AT_LOAD to its plain build. */
+function plainBuildAtLoad() {
+  return {
+    name: "plain-build-at-load",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      if (source !== DOM_AT_LOAD) return null;
+      const found = await this.resolve(source, importer, { ...options, skipSelf: true });
+      return found && { ...found, id: found.id.replace(DOM_BUILD, PLAIN_BUILD) };
+    },
+  };
+}
+
 /** Fails the build unless it is the installed form Buzz reads: one chunk,
  * no imports, exporting `apply`. */
 function pluginContract() {
@@ -130,7 +150,7 @@ export default defineConfig({
   logLevel: "warn",
   // The bundled React packages (react, react-dom) pick their build by it.
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
-  plugins: [reactFromHost(), ownDependencies(), pluginContract()],
+  plugins: [plainBuildAtLoad(), reactFromHost(), ownDependencies(), pluginContract()],
   // Symlinks kept: buzz-app modules keep their buzz-app/... ids, so the
   // bundle names them relative to the repository and holds no local path.
   resolve: { alias: { "@buzz": resolve(buzzLink, "src") }, preserveSymlinks: true },
