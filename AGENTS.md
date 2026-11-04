@@ -13,10 +13,15 @@ Keep the README true when you change behavior.
 | Path | Purpose |
 | --- | --- |
 | `plugin/manifest.json` | Plugin manifest. Buzz installs the `plugin/` folder. |
-| `src/plugin.js` | The plugin source. Edit this file, not the build. |
+| `src/plugin.js` | The plugin source: runtime, tools and type wiring. Edit `src/`, not the build. |
+| `src/config.js` | The config fields, defaults and valid values, for the runtime and the views. |
+| `src/views.js` | The New agent and Settings views, from bundled buzz-app components. |
+| `src/react-host.js` | Every `react` import resolves here: the app's React. |
+| `src/save-footer.js` | Puts Save in the agent panel's sticky footer. |
 | `src/owner.js` | Who may start a turn: a copy of Buzz's mention rule. |
 | `plugin/plugin.js` | The build of `src/`: one self-contained ES module. Not in Git. |
-| `scripts/build-plugin.mjs` | Builds `plugin/plugin.js`, or another folder with `--out`. |
+| `scripts/build-plugin.mjs` | Builds `plugin/plugin.js`, or another folder with `--out`. Holds `BUZZ_APP_REV`. |
+| `scripts/link-toolchain` | Links the buzz-app clone (`buzz-app`, not in Git) that the views bundle. |
 | `vite.config.js` | The bundle settings and the one-file contract check. |
 | `package.json`, `pnpm-lock.yaml` | The pinned build tool and libraries. |
 | `scripts/smoke.mjs` | Smoke scenarios: the plugin with a fake host and a fake dsh. |
@@ -29,7 +34,8 @@ Keep the README true when you change behavior.
 ## Setup and checks
 
 1. Run `scripts/setup-hooks` once after you clone, and
-   `mise exec -- pnpm install --frozen-lockfile`.
+   `mise exec -- pnpm install --frozen-lockfile`. Link a buzz-app clone at
+   `BUZZ_APP_REV` with `scripts/link-toolchain` (README.md, Install).
 2. Run `scripts/check --quick` while you work, and `scripts/check` before
    you push.
 3. Build with `node scripts/build-plugin.mjs`. Never commit
@@ -46,8 +52,21 @@ settings. Do not edit the files that come from the hook template:
 
 - `plugin/plugin.js` must stay one file with no runtime imports. Buzz loads
   it as is. The build bundles the libraries in, and `vite.config.js` fails
-  the build when an import stays. Use `ctx.react` for React. Internal Buzz
-  modules are not available to an installed plugin.
+  the build when an import stays.
+- Every `react` import resolves to `src/react-host.js`. It forwards to the
+  app's React after `bindReact(ctx.react)`, so the bundled buzz-app
+  components share the app's hooks. The pinned `react` package must have
+  the same version as the app's React; `bindReact` stops on a mismatch.
+- The views bundle buzz-app components, not copies, so they look as the
+  app's own agents do. The build drops their CSS: the class names are
+  content hashes that the app's stylesheet of the same revision already
+  has. On each new `BUZZ_APP_REV`, check the New agent dialog and the
+  agent's tabs live in that app version.
+- Import buzz-app modules unchanged. Never edit the buzz-app clone. A
+  package that a buzz-app module needs goes into `package.json` with an
+  exact version.
+- Write views with `createElement`, not JSX, so the checks (node --check,
+  lizard, semgrep) read them.
 - A new library is a new dependency: pin the exact version in
   `package.json`. `pnpm-workspace.yaml` holds the minimum release age.
 - Keep the module top level pure. Do all work in `apply(ctx)`, and give each

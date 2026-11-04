@@ -8,10 +8,20 @@ https://github.com/block/buzz-app
 - src/owner.js: the owner and NIP-OA attestation checks, adapted from
   src/features/agents/owner-attestation.ts at the revision named in its
   header comment.
+- src/views.js: the New agent and Settings views follow
+  src/bundled/goose/tabs.tsx, built from the same buzz-app components.
+- src/react-host.js and src/save-footer.js: the same modules as in
+  buzz-plugin-opencode, which hold no buzz-app code of their own.
+
+The build also bundles buzz-app UI modules unchanged (the model picker,
+the instructions field, the design system and its DeepSeek mark), from the
+revision in scripts/build-plugin.mjs (BUZZ_APP_REV). The DeepSeek mark is
+DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says.
 
 The build (plugin/plugin.js, made on the user's computer) bundles the
-noble-curves and noble-hashes libraries by Paul Miller, licensed under the
-MIT License. Their license notices stay in the build.
+noble-curves and noble-hashes libraries by Paul Miller, and React, React
+DOM, Base UI, Floating UI, Motion and Tabler Icons for the views, each
+licensed under the MIT License. Their license notices stay in the build.
 
 DeepSeek Harness (dsh) is a separate program. This plugin does not include
 it; it starts the copy that the user installed.

@@ -34,18 +34,31 @@ reach dsh through a loopback MCP server that Buzz serves for the plugin.
 ## Install
 
 You build the plugin on your computer, then install the folder. The build
-bundles pinned libraries, so it is not in Git. It needs Node.js 24 and pnpm;
-[mise](https://mise.jdx.dev) installs the versions in `mise.toml`.
+bundles pinned libraries and buzz-app UI modules, so it is not in Git. It
+needs Node.js 24, pnpm and a buzz-app clone at the revision in
+`scripts/build-plugin.mjs` (`BUZZ_APP_REV`, the revision of Buzz Desktop
+`v0.7.0-preview.240.1`). [mise](https://mise.jdx.dev) installs the versions
+in `mise.toml`.
 
 1. Clone the repository and go into it:
    `git clone https://github.com/sagmans/buzz-plugin-dsh && cd buzz-plugin-dsh`
 2. Install the pinned tools: `mise exec -- pnpm install --frozen-lockfile`.
-3. Build: `mise exec -- node scripts/build-plugin.mjs`. This writes
-   `plugin/plugin.js` next to `plugin/manifest.json`.
-4. In the Buzz desktop app, open **Settings > Plugins**, select **Install
+3. Prepare the buzz-app clone and link it:
+
+   ```sh
+   git clone https://github.com/block/buzz-app.git ../buzz-app
+   git -C ../buzz-app checkout <BUZZ_APP_REV>
+   (cd ../buzz-app && pnpm install --frozen-lockfile --ignore-scripts)
+   scripts/link-toolchain ../buzz-app
+   ```
+
+4. Build: `mise exec -- node scripts/build-plugin.mjs`. This writes
+   `plugin/plugin.js` next to `plugin/manifest.json`. The build stops when
+   the clone is at another revision or has local edits.
+5. In the Buzz desktop app, open **Settings > Plugins**, select **Install
    from folder** and choose the `plugin` folder.
-5. Read the grants and accept them (see "Security").
-6. Turn on the plugin. Then choose **New agent** and pick **DSH** as the type.
+6. Read the grants and accept them (see "Security").
+7. Turn on the plugin. Then choose **New agent** and pick **DSH** as the type.
 
 The install preview shows that the plugin starts a program (`dsh`), serves
 MCP and reads files with your access. That is the whole native access of
@@ -54,16 +67,17 @@ again.
 
 ## Settings
 
-Each DSH agent has these settings (New agent dialog and the agent's
-**Settings** tab):
+The New agent dialog and the agent's tabs use the app's own model picker,
+instructions field and settings rows, so a DSH agent looks as the app's own
+agents do. Each DSH agent has these settings:
 
-| Setting | Default | Effect |
-| --- | --- | --- |
-| Model | Default of the dsh profile | A model that dsh offers. The list fills after the first session. |
-| Reasoning effort | Default | `off`, `low`, `high` or `max`, when the model has levels. |
-| Workspace | `~/dsh-agents` | The folder dsh works in. Absolute, or starts with `~/`. |
-| dsh profile | `acp` | The dsh profile to start. Lowercase letters, digits, `-` and `_`. |
-| Instructions | Empty | Text that each new session gets first. |
+| Setting | Tab | Default | Effect |
+| --- | --- | --- | --- |
+| Model | Identity | DSH default (the dsh profile's model) | A model that dsh offers. The list fills after the first session; you can also type a model. |
+| Thinking | Identity | Automatic (the dsh profile's level) | `Off`, `Low`, `High` or `Max`, when the model has levels. |
+| Instructions | Identity | Empty | Text that each new session gets first. |
+| Workspace | Settings | `~/dsh-agents` | The folder dsh works in. Absolute, or starts with `~/`. |
+| Profile | Settings | `acp` | The dsh profile to start. Lowercase letters, digits, `-` and `_`. |
 
 A model or effort change applies at the next turn. A workspace or profile
 change applies to new sessions; use **New session** for a thread to use it
@@ -92,6 +106,8 @@ there.
 - `read` shows pubkeys, not display names.
 - Compact is not supported. **New session** starts the thread over.
 - Session history is not shown in the app. dsh keeps it in its own storage.
+- The Settings tab does not warn about unsaved changes when you leave it.
+  The plugin API does not give that part of the app to plugins.
 
 ## Development
 
