@@ -1,0 +1,17 @@
+buzz-plugin-dsh
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software adapted from Buzz (block/buzz-app),
+Copyright 2026 Block, Inc., licensed under the Apache License, Version 2.0:
+https://github.com/block/buzz-app
+
+- src/owner.js: the owner and NIP-OA attestation checks, adapted from
+  src/features/agents/owner-attestation.ts at the revision named in its
+  header comment.
+
+The build (plugin/plugin.js, made on the user's computer) bundles the
+noble-curves and noble-hashes libraries by Paul Miller, licensed under the
+MIT License. Their license notices stay in the build.
+
+DeepSeek Harness (dsh) is a separate program. This plugin does not include
+it; it starts the copy that the user installed.

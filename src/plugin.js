@@ -1,6 +1,6 @@
 // DSH agents: a Buzz plugin (API v1). This is the source; scripts/build-plugin.mjs
-// bundles it into the one self-contained ES module that Buzz loads,
-// plugin/plugin.js.
+// bundles it with src/owner.js into the one self-contained ES module that
+// Buzz loads, plugin/plugin.js.
 //
 // Why it exists: Buzz ships agent types for Claude, Codex, Goose and Pi, but
 // not for DeepSeek Harness (`dsh`). This plugin adds a "DSH" agent type whose
@@ -21,9 +21,12 @@
 // installed plugin cannot import it, so this file carries a minimal copy of
 // the tools an agent needs to answer in a conversation.
 //
-// Trust: dsh runs tools (shell, file edits) with the user's own access, so
-// only the agent owner's own signed mentions start a turn. Watches and
-// timers are not run (no standalone turns in this version).
+// Trust: dsh runs tools (shell, file edits) with the user's own access, so a
+// mention starts a turn only with the owner's authority, by the same rule as
+// Buzz's own agents (src/owner.js). Watches and timers are not run (no
+// standalone turns in this version).
+
+import { fromOwner } from "./owner.js";
 
 // Cordis starts apply() only after these host services exist.
 export const inject = ["react", "agents", "host"];
@@ -798,17 +801,18 @@ export function placeOf(delivery) {
   return undefined;
 }
 
-/** Whether the trigger may start a turn: owner-signed mentions and local wakes only. */
-export function admitted(delivery) {
+/** Whether the trigger may start a turn: mentions with the owner's authority
+ * (src/owner.js, the rule of Buzz's own agents) and local wakes only. */
+export async function admitted(delivery) {
   const { trigger, agent } = delivery;
-  if (trigger.type === "mention") return trigger.event.pubkey === agent.owner;
+  if (trigger.type === "mention") return fromOwner(trigger.event, agent.owner);
   return trigger.type === "plugin" || trigger.type === "attention";
 }
 
 export function createRun(runtime, agents) {
   return async (delivery) => {
     const place = placeOf(delivery);
-    if (!admitted(delivery) || !place) return delivery.ignored?.();
+    if (!place || !(await admitted(delivery))) return delivery.ignored?.();
     const settings = config(delivery.config);
     if (delivery.model) settings.model = delivery.model;
     if (delivery.effort) settings.effort = delivery.effort;

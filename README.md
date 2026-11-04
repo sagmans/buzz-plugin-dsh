@@ -74,9 +74,14 @@ there.
 - dsh runs its tools (shell, file edits) with your own access, with no
   sandbox. The plugin answers each dsh permission request with "allow once"
   and never with a lasting grant.
-- Only your own signed mentions start a turn. Mentions from other people or
-  agents are ignored. Plugin and Attention wakes from this app also start a
-  turn, framed as data.
+- A mention starts a turn only with your authority, by the same rule as the
+  agents that come with Buzz: your own signed mention, or a mention from
+  one of your agents whose `auth` tag (NIP-OA) you signed. Mentions from
+  other people, and from agents without a valid `auth` tag, are ignored.
+  Plugin and Attention wakes from this app also start a turn, framed as
+  data.
+- Relay workflow mentions do not start a turn. Buzz admits them with a
+  proof that an installed plugin cannot read.
 - The plugin passes no secret to dsh. dsh reads its own provider keys.
 
 ## Limitations

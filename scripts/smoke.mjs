@@ -7,7 +7,8 @@
 // child processes and a real loopback HTTP MCP server, so the paths the README
 // promises run end to end on every push:
 //   - registration: the DSH agent type and its settings;
-//   - trust: only the owner's own mentions start a turn;
+//   - trust: a mention starts a turn only with the owner's authority: the
+//     owner's own, or a sibling agent's with a valid owner `auth` tag (NIP-OA);
 //   - a turn: session/new, preamble once, the `send` tool posts in the thread,
 //     the run stays working until the prompt settles;
 //   - follow-up turns reuse the session; a restart resumes it;
@@ -22,6 +23,8 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { bytesToHex, hexToBytes } from "@noble/curves/utils.js";
 
 const DEFAULT_PLUGIN = "plugin/plugin.js";
 const FAKE_ACP = join(dirname(fileURLToPath(import.meta.url)), "fake-acp.mjs");
@@ -34,8 +37,13 @@ const SETTLE_MS = 50;
 const STEP_TIMEOUT_MS = 10_000;
 
 const hex = (label) => createHash("sha256").update(`dsh-smoke:${label}`).digest("hex");
-const OWNER = hex("owner");
+// Real keys: the trust scenario signs NIP-OA attestations with them.
+const OWNER_SECRET = hexToBytes(hex("owner-secret"));
+const OTHER_SECRET = hexToBytes(hex("other-secret"));
+const OWNER = bytesToHex(schnorr.getPublicKey(OWNER_SECRET));
 const STRANGER = hex("stranger");
+const SIBLING = hex("sibling");
+const AUTH_PREFIX = "nostr:agent-auth:";
 const AGENT = { key: hex("agent"), pubkey: hex("agent"), name: "Dsh Test", owner: OWNER };
 
 class SmokeFailure extends Error {
@@ -138,10 +146,16 @@ function createHandle() {
   };
 }
 
-function mention({ author = OWNER, content = "hello", root } = {}) {
+function mention({ author = OWNER, content = "hello", root, extraTags = [], kind = 9, createdAt = 1 } = {}) {
   const id = hex(`mention-${Math.random()}`);
-  const tags = [["h", CHANNEL], ...(root ? [["e", root, "", "reply"]] : [])];
-  return { id, pubkey: author, kind: 9, content, created_at: 1, tags };
+  const tags = [["h", CHANNEL], ...(root ? [["e", root, "", "reply"]] : []), ...extraTags];
+  return { id, pubkey: author, kind, content, created_at: createdAt, tags };
+}
+
+/** A NIP-OA `auth` tag: `secret` attests that `target` acts for its key. */
+function authTag(secret, target, conditions = "") {
+  const digest = createHash("sha256").update(`${AUTH_PREFIX}${target}:${conditions}`).digest();
+  return ["auth", bytesToHex(schnorr.getPublicKey(secret)), conditions, bytesToHex(schnorr.sign(digest, secret))];
 }
 
 function delivery(handle, event, extra = {}) {
@@ -185,6 +199,41 @@ async function scenarioRegister(plugin) {
   if (defaults.profile !== "acp" || defaults.workspace !== "~/dsh-agents") throw new SmokeFailure(name, "bad defaults", defaults);
   if (plugin.config({ profile: "--patch" }).profile !== "acp") throw new SmokeFailure(name, "a flag-like profile was kept");
   if (plugin.config({ workspace: "relative" }).workspace !== "~/dsh-agents") throw new SmokeFailure(name, "a relative workspace was kept");
+}
+
+// The mention rule of Buzz's own agents (buzz-app fromOwner): owner, or a
+// sibling with a valid owner attestation; anything else is refused.
+async function scenarioTrust(plugin) {
+  const name = "trust";
+  const handle = createHandle();
+  const ownerTag = authTag(OWNER_SECRET, SIBLING);
+  const attested = (conditions, extra = {}) => mention({ author: SIBLING, extraTags: [authTag(OWNER_SECRET, SIBLING, conditions)], ...extra });
+  const cases = [
+    ["the owner", mention(), true],
+    ["a stranger", mention({ author: STRANGER }), false],
+    ["a sibling attested by the owner", mention({ author: SIBLING, extraTags: [ownerTag] }), true],
+    ["an attestation by another key", mention({ author: SIBLING, extraTags: [authTag(OTHER_SECRET, SIBLING)] }), false],
+    ["a forged owner attestation", mention({ author: SIBLING, extraTags: [["auth", OWNER, "", authTag(OTHER_SECRET, SIBLING)[3]]] }), false],
+    ["an attestation for another agent", mention({ author: STRANGER, extraTags: [ownerTag] }), false],
+    ["two auth tags", mention({ author: SIBLING, extraTags: [ownerTag, ownerTag] }), false],
+    ["a met kind condition", mention({ author: SIBLING, extraTags: [authTag(OWNER_SECRET, SIBLING, "kind=9")] }), true],
+    ["an unmet kind condition", mention({ author: SIBLING, extraTags: [authTag(OWNER_SECRET, SIBLING, "kind=7")] }), false],
+    // Times away from the bound, so a swapped comparison fails a case.
+    ["an expired attestation", attested("created_at<1000", { createdAt: 2000 }), false],
+    ["an attestation in force", attested("created_at<3000", { createdAt: 2000 }), true],
+    ["an attestation not yet valid", attested("created_at>3000", { createdAt: 2000 }), false],
+    ["an attestation after its start", attested("created_at>1000", { createdAt: 2000 }), true],
+    ["a met compound condition", attested("kind=9&created_at>1000", { createdAt: 2000 }), true],
+    ["a compound condition with one unmet clause", attested("kind=9&created_at<1000", { createdAt: 2000 }), false],
+    ["a malformed condition", attested("kind=09"), false],
+    ["an out-of-range kind", attested("kind=65536"), false],
+    ["an out-of-range time", attested("created_at<4294967296", { createdAt: 2000 }), false],
+    ["an auth tag with an extra element", mention({ author: SIBLING, extraTags: [[...ownerTag, "extra"]] }), false],
+  ];
+  for (const [label, event, expected] of cases) {
+    const got = await plugin.admitted(delivery(handle, event).value);
+    if (got !== expected) throw new SmokeFailure(name, `${label}: admitted=${got}, expected ${expected}`);
+  }
 }
 
 async function scenarioTurns(plugin) {
@@ -303,6 +352,7 @@ async function main() {
   // dsh errors are logged by the plugin; keep smoke output to the verdicts.
   console.error = () => undefined;
   await scenarioRegister(plugin);
+  await scenarioTrust(plugin);
   const saved = await scenarioTurns(plugin);
   await scenarioResume(plugin, saved);
   await scenarioInterrupt(plugin);

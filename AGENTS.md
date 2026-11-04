@@ -14,6 +14,7 @@ Keep the README true when you change behavior.
 | --- | --- |
 | `plugin/manifest.json` | Plugin manifest. Buzz installs the `plugin/` folder. |
 | `src/plugin.js` | The plugin source. Edit this file, not the build. |
+| `src/owner.js` | Who may start a turn: a copy of Buzz's mention rule. |
 | `plugin/plugin.js` | The build of `src/`: one self-contained ES module. Not in Git. |
 | `scripts/build-plugin.mjs` | Builds `plugin/plugin.js`, or another folder with `--out`. |
 | `vite.config.js` | The bundle settings and the one-file contract check. |
@@ -53,8 +54,10 @@ settings. Do not edit the files that come from the hook template:
   long-lived resource a cleanup through `ctx.effect`.
 - The `host` grants in the manifest are the plugin's whole native access.
   `scripts/check` pins them; a grant change is security-relevant.
-- Only the owner's own mentions may start a turn: dsh runs commands with
-  the user's access. Do not widen `admitted` without a security review.
+- A mention starts a turn only with the owner's authority, by the rule of
+  Buzz's own agents (`fromOwner` in `src/owner.js`): dsh runs commands with
+  the user's access. Do not widen `admitted` or `src/owner.js` without a
+  security review.
 - Validate every tool argument at the boundary, and never let a setting
   become a process flag (see `PROFILE_RE`).
 - Do not change the manifest `id` (`sagmans.dsh`), the type id (`dsh`) or the
