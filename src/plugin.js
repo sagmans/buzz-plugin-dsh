@@ -1,4 +1,6 @@
-// DSH agents: a prebuilt Buzz plugin (API v1), one self-contained ES module.
+// DSH agents: a Buzz plugin (API v1). This is the source; scripts/build-plugin.mjs
+// bundles it into the one self-contained ES module that Buzz loads,
+// plugin/plugin.js.
 //
 // Why it exists: Buzz ships agent types for Claude, Codex, Goose and Pi, but
 // not for DeepSeek Harness (`dsh`). This plugin adds a "DSH" agent type whose

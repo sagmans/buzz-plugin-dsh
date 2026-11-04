@@ -1,7 +1,9 @@
 # macOS Finder metadata
 .DS_Store
-# Local tool installs; this repository ships no npm dependencies
+# pnpm installs the pinned build tool and libraries here (pnpm-lock.yaml)
 node_modules/
+# The build output: made from src/ on each machine (scripts/build-plugin.mjs)
+/plugin/plugin.js
 # Throwaway files from local dogfood runs
 .scratch/
 *.log

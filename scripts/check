@@ -32,6 +32,16 @@ PLUGIN_DIR=plugin
 MANIFEST="$PLUGIN_DIR/manifest.json"
 PLUGIN_JS="$PLUGIN_DIR/plugin.js"
 SMOKE=scripts/smoke.mjs
+# The source that the build bundles into plugin/plugin.js.
+ENTRY=src/plugin.js
+BUILD=scripts/build-plugin.mjs
+LOCKFILE=pnpm-lock.yaml
+PNPM_MIN_VERSION=12.0.0
+# A frozen install from the lockfile; the network may be slow, never endless.
+PNPM_INSTALL_TIMEOUT_SECONDS=300
+# The lockfile holds registry hashes, not hand-written text; its packages are
+# judged by the dependency audit in the pre-push hook instead.
+PRIVATE_SKIP_RE='^pnpm-lock\.yaml$'
 # Buzz manifest limits (buzz-app crates/plugin-manager): id shape and length,
 # description size in bytes.
 MANIFEST_ID_RE='^[a-z][a-z0-9.-]{0,79}$'
@@ -126,7 +136,10 @@ check_js_syntax() {
 # Buzz rejects the whole install for a bad manifest; catch it before it ships.
 check_manifest() {
 	has_file "$MANIFEST" || return 0
-	has_file "$PLUGIN_JS" || fail "$MANIFEST exists but $PLUGIN_JS is missing"
+	has_file "$ENTRY" || fail "$MANIFEST exists but its source $ENTRY is missing"
+	# The build bundles pinned libraries that the repository checks do not
+	# judge; a committed copy would also drift from the source.
+	if has_file "$PLUGIN_JS"; then fail "$PLUGIN_JS is a build output: remove it from Git (git rm --cached)"; fi
 	node --input-type=module - "$MANIFEST" "$MANIFEST_ID_RE" "$MANIFEST_DESCRIPTION_MAX_BYTES" "$MANIFEST_API_VERSION" <<'NODE' || fail "$MANIFEST is invalid"
 import { readFileSync } from "node:fs";
 const [path, idPattern, maxBytes, apiVersion] = process.argv.slice(2);
@@ -166,9 +179,13 @@ check_shell() {
 # Fail on any private-data shape; print path:line so it is fixed in one pass.
 check_private_data() {
 	local pattern hits found=0
-	[ "${#files[@]}" -gt 0 ] || return 0
+	local path judged=()
+	for path in "${files[@]}"; do
+		[[ "$path" =~ $PRIVATE_SKIP_RE ]] || judged+=("$path")
+	done
+	[ "${#judged[@]}" -gt 0 ] || return 0
 	for pattern in "${PRIVATE_PATTERNS[@]}"; do
-		hits="$(grep -n -I -E -- "$pattern" "${files[@]}" | grep -v -E -- "$PRIVATE_ALLOWED_RE" || true)"
+		hits="$(grep -n -I -E -- "$pattern" "${judged[@]}" | grep -v -E -- "$PRIVATE_ALLOWED_RE" || true)"
 		if [ -n "$hits" ]; then
 			echo >&2 "❌ $CHECK: private-data pattern '$pattern' matched:"
 			printf '%s\n' "$hits" | sed 's/^/   /' >&2
@@ -178,12 +195,39 @@ check_private_data() {
 	[ "$found" -eq 0 ] || fail "remove the private data above (use neutral words such as \"the user\" or example.com)"
 }
 
+# The build and the smoke scenarios need the pinned libraries; install them
+# exactly as the lockfile says (no resolution, so no new version slips in).
+install_dependencies() {
+	has_file "$LOCKFILE" || return 0
+	require_tool "$CHECK" pnpm "$PNPM_MIN_VERSION" 'install pnpm through mise (mise.toml)' pnpm --version
+	run_with_timeout "$PNPM_INSTALL_TIMEOUT_SECONDS" pnpm install --frozen-lockfile --reporter=silent ||
+		fail "pnpm install --frozen-lockfile failed (lockfile out of date, network error or timeout)"
+}
+
+# The build goes to a folder of its own, so a check never rewrites the
+# plugin/ folder that a running Buzz app may have installed.
+build_dir=""
+cleanup_build() {
+	case "$build_dir" in
+	*/dsh-check-build.*) rm -rf -- "$build_dir" ;;
+	esac
+}
+trap cleanup_build EXIT
+
+# Users install what the build writes; it must build from the committed
+# source and keep the one-file contract (vite.config.js).
+check_build() {
+	has_file "$BUILD" || fail "$BUILD is missing: the plugin cannot be built"
+	build_dir="$(mktemp -d "${TMPDIR:-/tmp}/dsh-check-build.XXXXXX")"
+	node "$BUILD" --out "$build_dir" || fail "the plugin build failed"
+	built_js="$build_dir/plugin.js"
+}
+
 # Behavior must stay what the README promises; the smoke script drives the
-# real plugin.js with a fake Buzz context.
+# built plugin.js with a fake Buzz context.
 check_smoke() {
 	has_file "$SMOKE" || return 0
-	has_file "$PLUGIN_JS" || fail "$SMOKE exists but $PLUGIN_JS is missing"
-	node "$SMOKE" "$PLUGIN_JS" || fail "smoke scenarios failed"
+	node "$SMOKE" "$built_js" || fail "smoke scenarios failed"
 }
 
 # The generic hook lints only staged Markdown; at push the whole tree is judged.
@@ -238,6 +282,8 @@ check_private_data
 if [ "$quick" -eq 1 ]; then
 	exit 0
 fi
+install_dependencies
+check_build
 check_smoke
 check_markdown
 check_complexity

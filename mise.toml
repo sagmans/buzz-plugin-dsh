@@ -1,0 +1,5 @@
+# Build tools for this repository. Run them through mise (`mise exec -- …`),
+# so every machine builds with the same Node.js and pnpm.
+[tools]
+node = "24.22.1"
+pnpm = "12.4.2"

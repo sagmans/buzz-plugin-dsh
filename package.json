@@ -1,0 +1,13 @@
+{
+  "name": "buzz-plugin-dsh",
+  "private": true,
+  "type": "module",
+  "description": "Buzz plugin: DSH agents. src/ is the source; scripts/build-plugin.mjs builds it into plugin/plugin.js, which is not committed.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  }
+}

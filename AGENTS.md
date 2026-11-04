@@ -13,7 +13,11 @@ Keep the README true when you change behavior.
 | Path | Purpose |
 | --- | --- |
 | `plugin/manifest.json` | Plugin manifest. Buzz installs the `plugin/` folder. |
-| `plugin/plugin.js` | The plugin: one self-contained ES module, no build step. |
+| `src/plugin.js` | The plugin source. Edit this file, not the build. |
+| `plugin/plugin.js` | The build of `src/`: one self-contained ES module. Not in Git. |
+| `scripts/build-plugin.mjs` | Builds `plugin/plugin.js`, or another folder with `--out`. |
+| `vite.config.js` | The bundle settings and the one-file contract check. |
+| `package.json`, `pnpm-lock.yaml` | The pinned build tool and libraries. |
 | `scripts/smoke.mjs` | Smoke scenarios: the plugin with a fake host and a fake dsh. |
 | `scripts/fake-acp.mjs` | The fake dsh ACP server that the smoke scenarios start. |
 | `scripts/check` | All repository checks. The Git hooks call it. |
@@ -23,10 +27,14 @@ Keep the README true when you change behavior.
 
 ## Setup and checks
 
-1. Run `scripts/setup-hooks` once after you clone.
+1. Run `scripts/setup-hooks` once after you clone, and
+   `mise exec -- pnpm install --frozen-lockfile`.
 2. Run `scripts/check --quick` while you work, and `scripts/check` before
    you push.
-3. Run the scenarios with `node scripts/smoke.mjs [path/to/plugin.js]`.
+3. Build with `node scripts/build-plugin.mjs`. Never commit
+   `plugin/plugin.js`: it bundles libraries that the checks do not judge,
+   and `scripts/check` fails when it is tracked.
+4. Run the scenarios with `node scripts/smoke.mjs [path/to/plugin.js]`.
 
 Never use `--no-verify`, and never change `core.hooksPath` or other Git
 settings. Do not edit the files that come from the hook template:
@@ -36,8 +44,11 @@ settings. Do not edit the files that come from the hook template:
 ## Plugin rules
 
 - `plugin/plugin.js` must stay one file with no runtime imports. Buzz loads
-  it as is. Use `ctx.react` for React. Internal Buzz modules are not
-  available to an installed plugin.
+  it as is. The build bundles the libraries in, and `vite.config.js` fails
+  the build when an import stays. Use `ctx.react` for React. Internal Buzz
+  modules are not available to an installed plugin.
+- A new library is a new dependency: pin the exact version in
+  `package.json`. `pnpm-workspace.yaml` holds the minimum release age.
 - Keep the module top level pure. Do all work in `apply(ctx)`, and give each
   long-lived resource a cleanup through `ctx.effect`.
 - The `host` grants in the manifest are the plugin's whole native access.

@@ -33,17 +33,24 @@ reach dsh through a loopback MCP server that Buzz serves for the plugin.
 
 ## Install
 
-The built plugin is in the `plugin/` folder: `manifest.json` and
-`plugin.js`. There is no build step.
+You build the plugin on your computer, then install the folder. The build
+bundles pinned libraries, so it is not in Git. It needs Node.js 24 and pnpm;
+[mise](https://mise.jdx.dev) installs the versions in `mise.toml`.
 
-1. Open **Settings > Plugins > Manage plugins**.
-2. Add the repository `sagmans/buzz-plugin-dsh` with branch `main`.
-3. Select the `plugin` folder in the list, then select **Install**.
-4. Turn on the plugin. Then choose **New agent** and pick **DSH** as the type.
+1. Clone the repository and go into it:
+   `git clone https://github.com/sagmans/buzz-plugin-dsh && cd buzz-plugin-dsh`
+2. Install the pinned tools: `mise exec -- pnpm install --frozen-lockfile`.
+3. Build: `mise exec -- node scripts/build-plugin.mjs`. This writes
+   `plugin/plugin.js` next to `plugin/manifest.json`.
+4. In the Buzz desktop app, open **Settings > Plugins**, select **Install
+   from folder** and choose the `plugin` folder.
+5. Read the grants and accept them (see "Security").
+6. Turn on the plugin. Then choose **New agent** and pick **DSH** as the type.
 
 The install preview shows that the plugin starts a program (`dsh`), serves
 MCP and reads files with your access. That is the whole native access of
-the plugin. To update, use **Update** on the plugin in **Manage plugins**.
+the plugin. To update, pull, build again and install the `plugin` folder
+again.
 
 ## Settings
 
@@ -83,10 +90,11 @@ there.
 
 ## Development
 
-See [AGENTS.md](AGENTS.md). Run `scripts/setup-hooks` once, then
-`scripts/check`. `scripts/smoke.mjs` runs the plugin against a fake host and
-a fake dsh ACP server (`scripts/fake-acp.mjs`), so it needs no dsh install
-and no model.
+See [AGENTS.md](AGENTS.md). The source is in `src/`; build it as in
+"Install". Run `scripts/setup-hooks` once, then `scripts/check`. The check
+builds into a temporary folder, so it never changes `plugin/`.
+`scripts/smoke.mjs` runs the plugin against a fake host and a fake dsh ACP
+server (`scripts/fake-acp.mjs`), so it needs no dsh install and no model.
 
 ## License
 
