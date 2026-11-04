@@ -391,15 +391,21 @@ export class AcpConnection {
       (code) => this.close(new DshPluginError("dsh", `exited with code ${code}`, { stderr: this.stderr })),
       (error) => this.close(new DshPluginError("dsh", "process failed", { stderr: this.stderr }, error)),
     );
-    const init = await this.request("initialize", {
-      protocolVersion: ACP_PROTOCOL_VERSION,
-      clientCapabilities: {},
-      clientInfo: { name: PLUGIN_ID, version: PLUGIN_VERSION },
-    });
-    if (init?.agentCapabilities?.mcpCapabilities?.http !== true)
-      throw new DshPluginError("initialize", "this dsh ACP server cannot use HTTP MCP servers");
-    this.capabilities = init.agentCapabilities;
-    return this;
+    try {
+      const init = await this.request("initialize", {
+        protocolVersion: ACP_PROTOCOL_VERSION,
+        clientCapabilities: {},
+        clientInfo: { name: PLUGIN_ID, version: PLUGIN_VERSION },
+      });
+      if (init?.agentCapabilities?.mcpCapabilities?.http !== true)
+        throw new DshPluginError("initialize", "this dsh ACP server cannot use HTTP MCP servers");
+      this.capabilities = init.agentCapabilities;
+      return this;
+    } catch (error) {
+      // A server that never became usable must not stay running unseen.
+      await this.kill();
+      throw error;
+    }
   }
 
   read(data) {
