@@ -27,7 +27,7 @@ import {
 } from "./profiles";
 import { bindReact } from "./react-host";
 import { ActivityRecorder } from "./recorder";
-import { SessionFiles } from "./session-files";
+import { mergedUsage, SessionFiles } from "./session-files";
 import { DshSetup } from "./setup";
 import { createViews } from "./views";
 
@@ -111,6 +111,31 @@ export function apply(ctx: Context) {
   );
 }
 
+/** The agent's token use: dsh's files, with the record for what they do not hold. */
+async function usageOf(
+  history: RecordedHistory,
+  files: SessionFiles,
+  agent: Readonly<{ key: string; config: unknown }>,
+  options: Readonly<{ since: number; signal: AbortSignal }>,
+) {
+  const [recorded, stored] = await Promise.all([
+    history.usage(agent.key, options),
+    files.usage(
+      agent.key,
+      dshConfig(agent.config),
+      options.since,
+      options.signal,
+    ),
+  ]);
+  if (stored.failure)
+    console.warn("dsh usage was partly read", {
+      operation: "usage",
+      agent: agent.key,
+      failure: stored.failure,
+    });
+  return mergedUsage(recorded, stored);
+}
+
 /** The DSH agent type, on `runtimes`, whose views and picks read `setup`. */
 function dshType(
   runtimes: ProfileRuntimes,
@@ -184,7 +209,7 @@ function dshType(
       },
     ],
     provider: createProvider(setup),
-    usage: (agent, options) => history.usage(agent.key, options),
+    usage: (agent, options) => usageOf(history, files, agent, options),
     models: (agent) => setup.picks(dshConfig(agent.config)),
     ...(gooseRun(runtime) as Pick<
       AgentType<DshConfig>,

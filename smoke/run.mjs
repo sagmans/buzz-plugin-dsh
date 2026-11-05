@@ -1517,6 +1517,147 @@ async function checkCompact(stage, plainAgent, plain, bundledAgent, bundled) {
   log("compact", refused.result.error);
 }
 
+/** A model request as dsh writes it, with counts that do not overlap. */
+const usageEvent = (at, id, inputTokens) =>
+  fileEvent("assistant/message", at, {
+    message: { id, source: { model: FAST_MODEL }, content: [] },
+    usage: {
+      inputTokens,
+      outputTokens: 2,
+      totalTokens: inputTokens + 7,
+      cacheReadTokens: 5,
+    },
+  });
+
+/** dsh's files give the usage the record never saw: older sessions, a compaction,
+ * subagents at every depth. They win over the record, and a bad one is said. */
+async function checkFileUsage(stage, agent, bundledAgent) {
+  const { type, workspace } = stage;
+  const { projectKey } = type.tabs.find(
+    ({ id }) => id === "activity",
+  ).component;
+  const write = (id, events) =>
+    writeSessionFile(workspace, projectKey, id, events);
+  const place = { channelId: "usage-channel", root: "usage-root" };
+  const base = 5_000_000;
+  const catalog = (at, childId) =>
+    fileEvent("subagent/catalog", at, { childId, mode: "worker", version: 1 });
+  const opened = fileTurns(agent.key, place, base, 1);
+  const written = [
+    write("usage-parent", [
+      ...opened,
+      usageEvent(base + 10, "m-parent", 100),
+      fileEvent("compaction/summary", base + 11, {
+        compactionId: "m-compaction",
+        model: FAST_MODEL,
+        usage: { inputTokens: 40, outputTokens: 3, totalTokens: 43 },
+      }),
+      catalog(base + 12, "usage-child"),
+    ]),
+    write("usage-child", [
+      usageEvent(base + 20, "m-child", 200),
+      catalog(base + 21, "usage-grandchild"),
+    ]),
+    write("usage-grandchild", [usageEvent(base + 30, "m-grandchild", 300)]),
+    write("usage-gone-parent", [
+      ...fileTurns(agent.key, place, base + 40, 1),
+      usageEvent(base + 50, "m-gone", 1),
+      catalog(base + 51, "usage-no-such-child"),
+    ]),
+    write("usage-foreign", [
+      ...fileTurns("other-agent", place, base, 1),
+      usageEvent(base + 60, "m-foreign", 1),
+    ]),
+    write("usage-old", [
+      ...fileTurns(agent.key, place, 1_000, 1),
+      usageEvent(2_000, "m-old", 1),
+    ]),
+  ];
+  const [recordedRow] = type.tabs
+    .find(({ id }) => id === "activity")
+    .component.history.recent(bundledAgent.key);
+  const list = (ids) => {
+    process.env.FAKE_ACP_LISTED = JSON.stringify(
+      ids.map((sessionId) => ({ sessionId, cwd: workspace })),
+    );
+  };
+  const read = (who) =>
+    type.usage(who, {
+      since: base - 1,
+      signal: AbortSignal.timeout(VIEW_TIMEOUT_MS),
+    });
+  list(["usage-parent", "usage-gone-parent", "usage-foreign", "usage-old"]);
+  const seen = await read(agent);
+  const parent = seen.find(({ id }) => id === "usage-parent");
+  const requests = parent?.observations.map(({ requestId }) => requestId);
+  assert(
+    ["m-parent", "m-compaction", "m-child", "m-grandchild"].every((id) =>
+      requests?.includes(id),
+    ) && parent.gaps.length === 0,
+    `a session's use with its subagents: ${JSON.stringify(parent)}`,
+  );
+  const own = parent.observations.find(
+    ({ requestId }) => requestId === "m-parent",
+  );
+  assert(
+    own.tokens.input === 100 &&
+      own.tokens.output === 2 &&
+      own.tokens.cacheRead === 5 &&
+      own.model === FAST_MODEL &&
+      parent.channelId === place.channelId &&
+      parent.lastAt === base + 30,
+    `a request from a file: ${JSON.stringify(parent)}`,
+  );
+  const gone = seen.find(({ id }) => id === "usage-gone-parent");
+  assert(gone?.gaps.length === 1, `a gone subagent: ${JSON.stringify(gone)}`);
+  assert(
+    !seen.some(({ id }) => id === "usage-foreign" || id === "usage-old"),
+    "another agent's or a too old session has usage",
+  );
+  const again = await read(agent);
+  assert(
+    again.find(({ id }) => id === "usage-parent")?.revision === parent.revision,
+    "an unchanged session changed its revision",
+  );
+
+  // The file of a recorded session replaces its record; a bad file leaves the
+  // record's other sessions shown as partly read.
+  write(recordedRow.sessionId, [
+    ...fileTurns(bundledAgent.key, place, base, 1),
+    usageEvent(base + 70, "m-filed", 7),
+  ]);
+  list([recordedRow.sessionId]);
+  const filed = await read(bundledAgent);
+  const replaced = filed.filter(({ id }) => id === recordedRow.sessionId);
+  assert(
+    replaced.length === 1 &&
+      replaced[0].observations.length === 1 &&
+      replaced[0].observations[0].requestId === "m-filed",
+    `a recorded session's file: ${JSON.stringify(replaced)}`,
+  );
+  const bad = write("usage-broken", []);
+  writeFileSync(bad, Buffer.from("not a zstd file"));
+  rmSync(
+    join(
+      sessionsHome,
+      "sessions",
+      projectKey(workspace),
+      recordedRow.sessionId,
+    ),
+    { recursive: true },
+  );
+  list(["usage-broken"]);
+  const partly = await read(bundledAgent);
+  assert(
+    partly.length > 0 && partly.every(({ gaps }) => gaps.length > 0),
+    `a bad file over the record: ${JSON.stringify(partly)}`,
+  );
+  delete process.env.FAKE_ACP_LISTED;
+  for (const file of written.concat(bad))
+    rmSync(dirname(file), { recursive: true });
+  log("file usage", `${requests.length} requests in a session and subagents`);
+}
+
 /** Token use reaches the app's usage from the bundle's prompt answers only. */
 async function checkUsage(stage, plainAgent, bundledAgent) {
   const options = { since: 0, signal: AbortSignal.timeout(VIEW_TIMEOUT_MS) };
@@ -1600,6 +1741,7 @@ async function scenarios(stage) {
     BUNDLED_PROFILE,
   );
   await checkUsage(stage, agent, bundledAgent);
+  await checkFileUsage(stage, agent, bundledAgent);
   await checkProviderDialog(stage, PLAIN_PROFILE, BUNDLED_PROFILE);
 }
 

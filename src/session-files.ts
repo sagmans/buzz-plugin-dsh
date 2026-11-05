@@ -10,6 +10,8 @@
 import { AcpProcess } from "@app/features/agent-harness/acp/process";
 import { errorMessage } from "@app/features/agent-harness/acp/steps";
 import type { TranscriptTurn } from "@app/features/agents/activity-transcript";
+import type { SessionUsage } from "@app/features/agents/service";
+import { withRevision } from "@app/features/agents/session-usage";
 import { Zstd } from "@hpcc-js/wasm-zstd";
 import { DSH, REQUEST_TIMEOUT_MS, type Spawn } from "./dsh";
 import type {
@@ -26,6 +28,7 @@ import {
   SessionTurns,
   textOf,
 } from "./session-transcript";
+import { type UsageFacts, UsageFold } from "./session-usage";
 
 /** The latest turns shown; the file keeps the rest. As the app's Activity tab. */
 const TURN_LIMIT = 50;
@@ -67,6 +70,9 @@ const HEX = 16;
 const ESCAPE_WIDTH = 4;
 /** Scanned files remembered, so a Refresh does not decode what it just saw. */
 const SCAN_CACHE_LIMIT = 2_000;
+/** Subagent sessions read for one session, its descendants' included. dsh bounds
+ * how deep they go, not how many a session starts, and a file names them. */
+const CHILD_LIMIT = 1_000;
 
 /** A session file or list that cannot be read as dsh's. */
 export class DshHistoryError extends Error {
@@ -100,11 +106,21 @@ export type ConversationRead = Readonly<{
   filed: readonly FiledSession[];
   failure?: string;
 }>;
+/** What the agent's sessions in dsh's store used. */
+export type UsageRead = Readonly<{
+  sessions: readonly SessionUsage[];
+  /** What could not be read. The sessions listed are still good. */
+  failure?: string;
+}>;
 export type Target = Readonly<{
   sessionId: string;
   channelId?: string;
   root?: string;
 }>;
+
+/** A file's token use and, when it opens a session of the agent's, where. */
+type OwnedUsage = UsageFacts &
+  Readonly<{ channelId?: string; root?: string; title?: string }>;
 
 /** dsh's folder name for a working directory. The same steps as `projectKey` in
  * dsh's dsh-session-persistence-jsonl, which owns the layout: a mismatch only
@@ -207,11 +223,20 @@ const readEvents = (
 const samePlace = (row: Partial<Place>, place: Partial<Place>) =>
   row.channelId === place.channelId && row.root === place.root;
 
+/** A recorded session's gap when dsh's store could not be fully read. */
+const UNREAD_FILES = "dsh's session files could not be fully read";
+
 export class SessionFiles {
   /** What each scanned file said, by what it was when read. */
   private readonly scanned = new Map<
     string,
     Readonly<{ size: number; session: FileSession | undefined }>
+  >();
+  /** What each file's token use was, by what it was when read: a usage read
+   * looks at every session, and most did not change since the last one. */
+  private readonly usageRead = new Map<
+    string,
+    Readonly<{ size: number; facts: OwnedUsage | undefined }>
   >();
 
   constructor(
@@ -323,6 +348,150 @@ export class SessionFiles {
     if (this.scanned.size >= SCAN_CACHE_LIMIT) this.scanned.clear();
     this.scanned.set(key, { size: bytes.length, session });
     return session;
+  }
+
+  /** A file's token use, for `agent`: undefined when its first prompt does not
+   * name that agent. Without `agent` the file is a subagent's, whose first prompt
+   * comes from its parent, so it is read whole and its opening is not looked at. */
+  private async usageFacts(
+    agent: string | undefined,
+    { sessionId, cwd }: Readonly<{ sessionId: string; cwd: string }>,
+    signal: AbortSignal,
+  ): Promise<OwnedUsage | "gone" | undefined> {
+    const bytes = await this.bytes(sessionId, cwd);
+    if (!bytes) return "gone";
+    const key = `${agent ?? ""}/${sessionId}`;
+    const known = this.usageRead.get(key);
+    if (known?.size === bytes.length) return known.facts;
+    const fold = new UsageFold();
+    let opening: ReturnType<typeof promptPlace> | undefined;
+    await readEvents(
+      bytes,
+      (event) => {
+        fold.add(event);
+        const body = object(event.data);
+        if (
+          agent &&
+          !opening &&
+          event.type === "user/message" &&
+          object(body?.source)?.kind === PROMPT_SOURCE
+        ) {
+          opening = promptPlace(textOf(body?.content));
+          return opening.agent === agent;
+        }
+        return true;
+      },
+      signal,
+    );
+    const place: ReturnType<typeof promptPlace> | undefined = opening;
+    const facts: OwnedUsage | undefined =
+      !agent || place?.agent === agent
+        ? {
+            ...fold.finish(),
+            ...(place?.channelId ? { channelId: place.channelId } : {}),
+            ...(place?.root ? { root: place.root } : {}),
+            ...(place?.title ? { title: place.title } : {}),
+          }
+        : undefined;
+    if (this.usageRead.size >= SCAN_CACHE_LIMIT) this.usageRead.clear();
+    this.usageRead.set(key, { size: bytes.length, facts });
+    return facts;
+  }
+
+  /** The token use of a session's subagents, and of theirs, with what could not
+   * be read. dsh keeps a subagent's session in its parent's project folder. */
+  private async descendants(
+    main: UsageFacts,
+    cwd: string,
+    signal: AbortSignal,
+  ) {
+    const seen = new Set(main.children);
+    const queue = [...seen];
+    const found: UsageFacts[] = [];
+    let unread = 0;
+    for (let id = queue.shift(); id; id = queue.shift()) {
+      signal.throwIfAborted();
+      if (found.length + unread >= CHILD_LIMIT) {
+        unread += queue.length + 1;
+        break;
+      }
+      try {
+        const facts = await this.usageFacts(
+          undefined,
+          { sessionId: id, cwd },
+          signal,
+        );
+        if (!facts || facts === "gone") {
+          unread += 1;
+          continue;
+        }
+        found.push(facts);
+        for (const child of facts.children) {
+          if (seen.has(child)) continue;
+          seen.add(child);
+          queue.push(child);
+        }
+      } catch {
+        signal.throwIfAborted();
+        unread += 1;
+      }
+    }
+    return { found, unread };
+  }
+
+  /** The agent's sessions in dsh's store with activity since `since`, each with
+   * its subagents' use, as the app's usage reads them. A file that cannot be read
+   * loses only itself. */
+  async usage(
+    agent: string,
+    source: SessionSource,
+    since: number,
+    signal: AbortSignal,
+  ): Promise<UsageRead> {
+    const sessions: SessionUsage[] = [];
+    const failures: string[] = [];
+    try {
+      for await (const row of this.listed(source, signal)) {
+        signal.throwIfAborted();
+        try {
+          const main = await this.usageFacts(agent, row, signal);
+          // A subagent ends before the parent that waits for it, so one older
+          // than the window saves its subagents' file reads.
+          if (!main || main === "gone" || main.lastAt < since) continue;
+          const { found, unread } = await this.descendants(
+            main,
+            row.cwd,
+            signal,
+          );
+          const all = [main, ...found];
+          const { channelId, root, title } = main;
+          sessions.push(
+            await withRevision({
+              id: row.sessionId,
+              gaps: unread
+                ? [`${unread} of the subagent sessions could not be read`]
+                : [],
+              ...(channelId ? { channelId } : {}),
+              ...(root ? { root } : {}),
+              ...(title ? { title } : {}),
+              startedAt: Math.min(...all.map((facts) => facts.startedAt)),
+              lastAt: Math.max(...all.map((facts) => facts.lastAt)),
+              observations: all.flatMap((facts) => facts.observations),
+            }),
+          );
+        } catch (error) {
+          signal.throwIfAborted();
+          failures.push(`${row.sessionId}: ${errorMessage(error)}`);
+        }
+      }
+    } catch (error) {
+      signal.throwIfAborted();
+      failures.push(`dsh could not list its sessions: ${errorMessage(error)}`);
+    }
+    return {
+      sessions,
+      ...(failures.length ? { failure: failures.join("; ") } : {}),
+    };
   }
 
   /** The agent's sessions in dsh's store, until `enough` of them are found. A
@@ -509,4 +678,31 @@ export function mergedRows(
   return [...recorded, ...stored.filter((row) => !seen.has(row.sessionId))]
     .sort((a, b) => b.at - a.at)
     .slice(0, RECENT_LIMIT);
+}
+
+/** The usage view's sessions: each from its file when that holds token use, which
+ * covers every turn and its subagents, else from the record. Failed files and a
+ * failed list may hide a session: the record's then say so, and nothing to show
+ * at all is an unread harness, not an idle one. */
+export async function mergedUsage(
+  recorded: readonly SessionUsage[],
+  { sessions, failure }: UsageRead,
+): Promise<readonly SessionUsage[]> {
+  const filed = sessions.filter((session) => session.observations.length);
+  if (failure && !filed.length && !recorded.length)
+    throw new DshHistoryError(failure);
+  const seen = new Set(filed.map((session) => session.id));
+  const rest = recorded.filter((session) => !seen.has(session.id));
+  if (!failure) return [...filed, ...rest];
+  return [
+    ...filed,
+    ...(await Promise.all(
+      rest.map(({ revision: _, ...session }) =>
+        withRevision({
+          ...session,
+          gaps: [...session.gaps, UNREAD_FILES],
+        }),
+      ),
+    )),
+  ];
 }

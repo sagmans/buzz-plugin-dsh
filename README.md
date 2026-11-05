@@ -31,9 +31,10 @@ flowchart TB
   so a DSH agent looks as the app's own agents do.
 - The Activity tab shows each session's transcript and tool calls from dsh's
   own session files, also for sessions from before this plugin. The app's
-  usage view shows token use (with the bundle). The plugin's local record shows
-  a turn as it streams. The record stays in the app's local storage and never
-  holds a session's token.
+  usage view reads token use from these files too, subagents included, and
+  prices it as the app does for any harness: dsh records no cost. The plugin's
+  local record shows a turn as it streams. The record stays in the app's local
+  storage and never holds a session's token.
 
 ## Requirements
 
@@ -116,7 +117,7 @@ answer per profile, with the command for your profile.
 | --- | --- | --- |
 | A message during a turn | Goes into the running turn. A refused steer runs as the next turn. | Waits for the next turn. |
 | Compact | Runs dsh's own compaction, with no model turn. | Refused with the add command. `/compact` never reaches the model, because it would be a paid turn. |
-| Token use | Recorded per turn. | Not recorded. |
+| Token use | Read from dsh's session files, and recorded per turn. | Read from dsh's session files. |
 
 ## Security
 
@@ -154,8 +155,7 @@ answer per profile, with the command for your profile.
   file shows from the plugin's record, which keeps the latest 50 turns of a
   conversation and at most 1 MB per agent. That is also what shows when
   `DSH_HOME` moves dsh's home, because a plugin cannot read the environment.
-- A session's order in the list comes from its last event in the file. Token use
-  comes from the record only, so a session from before the record shows no use.
+- A session's order in the list comes from its last event in the file.
 - A session with no title shows as a short id, because the plugin API does not
   give channel names to the Activity tab.
 - An open transcript replaces the Activity tab's content, with a back button.
