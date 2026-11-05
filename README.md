@@ -171,7 +171,9 @@ answer per profile, with the command for your profile.
 - The Activity tab does not load remote images in a transcript.
 - A static WebP picture with a color profile or a rotation uploads as a PNG
   with the same pixels, not as a WebP. The app encodes WebP in a web worker,
-  and an installed plugin is one file. Other pictures keep their format.
+  and an installed plugin is one file. Other pictures keep their format. A PNG
+  above the 50 MiB image limit fails with a size error: a very noisy picture
+  of 18 million pixels did. Use a smaller picture.
 - The Settings tab does not warn about unsaved changes when you leave it.
   The plugin API does not give that part of the app to plugins.
 
