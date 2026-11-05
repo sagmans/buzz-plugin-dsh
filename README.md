@@ -89,7 +89,10 @@ scripts/setup-buzz-profile
 ```
 
 The script refuses to run when the profile exists. It also turns off the session
-log upload, the package list upload and the OTel session export. Then add your
+log upload, the package list upload and the OTel session export. It adds
+[`@sagmans/dsh-auto-compact`](https://github.com/sagmans/dsh-auto-compact), so
+sessions condense near 250000 tokens. To change that value, edit
+`thresholdTokens` on the `auto-compact` row of the profile's patch. Then add your
 provider to `$DSH_HOME/profiles/buzz/cordis.patch.yml` (default `DSH_HOME` is
 `~/.dsh`), on the `acp-buzz` row and the provider row. Keep each key in the
 environment, not in that file.

@@ -11,3 +11,9 @@
 
 - id: session-telemetry-otel
   disabled: true
+
+# Owner decision: condense near 250K tokens on any model window. Models with a
+# small window still condense earlier, at the bundle's ratio.
+- id: auto-compact
+  config:
+    thresholdTokens: 250000

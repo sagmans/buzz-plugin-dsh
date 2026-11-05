@@ -20,11 +20,21 @@ readonly PROFILE=buzz
 # The dsh template with the ACP server, which the bundle needs.
 readonly TEMPLATE=acp
 readonly BUNDLE_DIR=dsh-acp-buzz
+# Long agent sessions must condense before the provider's window ends. An exact
+# version from npm, as this bundle lives in another repository: any computer
+# can install it, and the profile's lockfile holds its integrity hash.
+readonly AUTO_COMPACT_PACKAGE=@sagmans/dsh-auto-compact@0.2.1
 readonly PATCH_ROWS=scripts/buzz-profile.patch.yml
 readonly PROFILE_PATCH=cordis.patch.yml
 readonly EMPTY_PATCH='[]'
 # The row that exists only when the bundle loaded (dsh-acp-buzz/cordis.patch.yml).
 readonly BUNDLE_ROW='id: acp-buzz'
+# The row that the auto-compact bundle adds, and the patch key that sets its
+# budget. The value lives only in PATCH_ROWS, so an owner changes it in one place.
+readonly AUTO_COMPACT_ROW='id: auto-compact'
+readonly AUTO_COMPACT_KEY='thresholdTokens:'
+# Lines after AUTO_COMPACT_ROW that hold the budget in dsh's config dump.
+readonly AUTO_COMPACT_DUMP_LINES=3
 readonly DSH_START_TIMEOUT_SECONDS=120
 # `dsh plugin add` runs a package install for the profile.
 readonly DSH_ADD_TIMEOUT_SECONDS=300
@@ -57,6 +67,9 @@ run_with_timeout "$DSH_START_TIMEOUT_SECONDS" dsh --from-default-profile "$TEMPL
 [ -d "$profile_dir" ] || failed "dsh made no profile folder"
 run_with_timeout "$DSH_ADD_TIMEOUT_SECONDS" dsh plugin --profile "$PROFILE" add "link:$repo_root/$BUNDLE_DIR" ||
 	failed "dsh could not add the bundle"
+# Exact, so that a later release reaches this profile only by a change here.
+run_with_timeout "$DSH_ADD_TIMEOUT_SECONDS" dsh plugin --profile "$PROFILE" add --save-exact "$AUTO_COMPACT_PACKAGE" ||
+	failed "dsh could not add $AUTO_COMPACT_PACKAGE"
 # The template's patch is an empty YAML array, which rows cannot follow.
 patch_file="$profile_dir/$PROFILE_PATCH"
 patch_header=$(grep -vxF "$EMPTY_PATCH" -- "$patch_file") || failed "cannot read $PROFILE_PATCH"
@@ -64,8 +77,16 @@ patch_header=$(grep -vxF "$EMPTY_PATCH" -- "$patch_file") || failed "cannot read
 	printf '%s\n\n' "$patch_header"
 	cat -- "$repo_root/$PATCH_ROWS"
 } >"$patch_file" || failed "cannot write $PROFILE_PATCH"
-run_with_timeout "$DSH_START_TIMEOUT_SECONDS" dsh --profile "$PROFILE" --dump-config | grep -qF -- "$BUNDLE_ROW" ||
+config_dump=$(run_with_timeout "$DSH_START_TIMEOUT_SECONDS" dsh --profile "$PROFILE" --dump-config) ||
+	failed "dsh could not show the profile config"
+grep -qF -- "$BUNDLE_ROW" <<<"$config_dump" ||
 	failed "the profile config has no bundle row"
+# The bundle's own default also has this key. Only the patch's exact line proves
+# that the owner's budget is the one in effect.
+budget_line=$(grep -F -- "$AUTO_COMPACT_KEY" "$repo_root/$PATCH_ROWS") ||
+	failed "no $AUTO_COMPACT_KEY line in $PATCH_ROWS"
+grep -A"$AUTO_COMPACT_DUMP_LINES" -F -- "$AUTO_COMPACT_ROW" <<<"$config_dump" | grep -qxF -- "$budget_line" ||
+	failed "the profile config does not have the budget of $PATCH_ROWS"
 
 echo "made $profile_dir"
 echo "Next: add your provider to $profile_dir/$PROFILE_PATCH, on the row '$BUNDLE_ROW' and the provider row."
