@@ -44,6 +44,14 @@ SMOKE=smoke/run.mjs
 # need no build and no dsh, so they run beside the plugin's own scenarios.
 BUNDLE_SMOKE=dsh-acp-buzz/smoke.mjs
 TOOLCHAIN_LINK=buzz-app
+# The bundle's patch turns these uploads off in each profile with the bundle.
+# Each entry is a row and the exact line it must hold.
+BUNDLE_PATCH=dsh-acp-buzz/cordis.patch.yml
+BUNDLE_UPLOAD_ROWS=(
+	'session-log-deepseek:    enabled: false'
+	'plugin-package-inventory-deepseek:    enabled: false'
+	'session-telemetry-otel:  disabled: true'
+)
 # buzz-app's formatter at this repository's pin, with the config buzz-app's code
 # follows, which the clone holds.
 BIOME_BIN=node_modules/.bin/biome
@@ -205,6 +213,22 @@ process.exit(problems.length ? 1 : 0);
 NODE
 }
 
+# A Buzz profile must upload nothing, and a profile made by
+# hand has only the bundle's patch to say so. Losing a row would turn an upload
+# back on with no other sign, because the smoke runs use a stand-in dsh.
+check_bundle_upload_rows() {
+	has_file "$BUNDLE_PATCH" || return 0
+	local entry
+	for entry in "${BUNDLE_UPLOAD_ROWS[@]}"; do
+		awk -v row="- id: ${entry%%:*}" -v setting="${entry#*:}" '
+			$0 == row { inside = 1; next }
+			/^- / { inside = 0 }
+			inside && $0 == setting { found = 1 }
+			END { exit !found }
+		' "$BUNDLE_PATCH" || fail "$BUNDLE_PATCH: row ${entry%%:*} does not turn its upload off"
+	done
+}
+
 # Repo-owned shell scripts: lint for bugs, and one format so diffs stay small.
 check_shell() {
 	local path shells=() first
@@ -359,6 +383,7 @@ done
 check_js_syntax
 check_json
 check_manifest
+check_bundle_upload_rows
 check_shell
 check_private_data
 check_biome

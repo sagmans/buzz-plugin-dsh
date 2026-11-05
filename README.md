@@ -88,8 +88,7 @@ dsh's ACP server, the bundle below, and your provider. Make it once:
 scripts/setup-buzz-profile
 ```
 
-The script refuses to run when the profile exists. It also turns off the session
-log upload, the package list upload and the OTel session export. It adds
+The script refuses to run when the profile exists. It adds
 [`@sagmans/dsh-auto-compact`](https://github.com/sagmans/dsh-auto-compact), so
 sessions condense near 250000 tokens. To change that value, edit
 `thresholdTokens` on the `auto-compact` row of the profile's patch. Then add your
@@ -105,6 +104,11 @@ does not exist.
 `dsh-acp-buzz/` is a dsh profile bundle. You add it to the dsh profile, not to
 Buzz. `scripts/setup-buzz-profile` adds it to the `buzz` profile. An agent that
 you set to another profile needs it there too.
+
+The bundle also turns off the session log upload, the package list upload and
+the OTel session export, in each profile that has it. A profile without the
+bundle keeps dsh's defaults for these uploads, and they stay on.
+
 [dsh-acp-buzz/README.md](dsh-acp-buzz/README.md) has the protocol.
 
 ```sh

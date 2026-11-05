@@ -105,6 +105,11 @@ without a model call has no `usage`.
 profile, do them by hand. The bundle needs a profile with the
 `@deepseek-ai/dsh-acp-app` bundle. It was verified with dsh 0.2.1-rc.2.
 
+The bundle turns off three uploads in the profile: `session-log-deepseek`,
+`plugin-package-inventory-deepseek` and `session-telemetry-otel`. Add the bundle
+only to a profile where you want this. A profile's own patch can set these rows
+again.
+
 1. Link the folder into the profile. dsh adds the dependency and the
    bundle entry:
 

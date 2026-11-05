@@ -3,9 +3,10 @@
 # profile").
 #
 # Why: Buzz has its own profile, so no other dsh profile needs the Buzz bundle
-# or changes for it. The steps are the same on each computer, and they keep the
-# uploads off that this profile must never make. dsh's own template command
-# replaces a profile that exists, so this script refuses to run on one.
+# or changes for it. The steps are the same on each computer. The bundle turns
+# off the uploads that this profile must never make, and this script refuses a
+# result where dsh does not show them off. dsh's own template command replaces
+# a profile that exists, so this script refuses to run on one.
 #
 # Usage: scripts/setup-buzz-profile
 #   DSH_HOME  dsh's home folder, as dsh reads it (default: ~/.dsh)
@@ -35,6 +36,14 @@ readonly AUTO_COMPACT_ROW='id: auto-compact'
 readonly AUTO_COMPACT_KEY='thresholdTokens:'
 # Lines after AUTO_COMPACT_ROW that hold the budget in dsh's config dump.
 readonly AUTO_COMPACT_DUMP_LINES=3
+# How dsh's composed config shows each upload row of the bundle's patch off. dsh
+# only warns about a patch row whose target is gone, so a renamed row in a new
+# dsh must stop this script.
+readonly UPLOAD_ROWS_OFF=(
+	'session-log-deepseek:    enabled: false'
+	'plugin-package-inventory-deepseek:    enabled: false'
+	'session-telemetry-otel:  disabled: true'
+)
 readonly DSH_START_TIMEOUT_SECONDS=120
 # `dsh plugin add` runs a package install for the profile.
 readonly DSH_ADD_TIMEOUT_SECONDS=300
@@ -55,6 +64,16 @@ command -v dsh >/dev/null || die "$EX_CONFIG" "dsh is not on PATH: install DeepS
 [ -d "$repo_root/$BUNDLE_DIR" ] || die "$EX_CONFIG" "no $BUNDLE_DIR folder in $repo_root"
 [ -f "$repo_root/$PATCH_ROWS" ] || die "$EX_CONFIG" "no $PATCH_ROWS in $repo_root"
 [ ! -e "$profile_dir" ] || die "$EX_CONFIG" "$profile_dir exists: this script never replaces a profile"
+
+# True when the top-level row in the config on stdin holds the exact line.
+row_has_setting() {
+	awk -v row="- id: $1" -v setting="$2" '
+		$0 == row { inside = 1; next }
+		/^- / { inside = 0 }
+		inside && $0 == setting { found = 1 }
+		END { exit !found }
+	'
+}
 
 # A failure after this point leaves a part-made profile. It stays for the
 # owner to read: the message names it, and a new run refuses until it is gone.
@@ -87,6 +106,10 @@ budget_line=$(grep -F -- "$AUTO_COMPACT_KEY" "$repo_root/$PATCH_ROWS") ||
 	failed "no $AUTO_COMPACT_KEY line in $PATCH_ROWS"
 grep -A"$AUTO_COMPACT_DUMP_LINES" -F -- "$AUTO_COMPACT_ROW" <<<"$config_dump" | grep -qxF -- "$budget_line" ||
 	failed "the profile config does not have the budget of $PATCH_ROWS"
+for row_off in "${UPLOAD_ROWS_OFF[@]}"; do
+	row_has_setting "${row_off%%:*}" "${row_off#*:}" <<<"$config_dump" ||
+		failed "the profile config does not show ${row_off%%:*} off"
+done
 
 echo "made $profile_dir"
 echo "Next: add your provider to $profile_dir/$PROFILE_PATCH, on the row '$BUNDLE_ROW' and the provider row."

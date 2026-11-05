@@ -1,16 +1,5 @@
-# Added by scripts/setup-buzz-profile. A Buzz agent's profile uploads nothing:
-# these rows turn off each upload that dsh's ACP template loads.
-
-- id: session-log-deepseek
-  config:
-    enabled: false
-
-- id: plugin-package-inventory-deepseek
-  config:
-    enabled: false
-
-- id: session-telemetry-otel
-  disabled: true
+# Added by scripts/setup-buzz-profile. The upload rows are in the bundle's patch,
+# so that they also hold for a profile made without this script.
 
 # Owner decision: condense near 250K tokens on any model window. Models with a
 # small window still condense earlier, at the bundle's ratio.

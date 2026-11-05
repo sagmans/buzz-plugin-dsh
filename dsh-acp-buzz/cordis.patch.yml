@@ -7,6 +7,23 @@
 # A patch replaces a row's whole config. The provider and model below are
 # the dsh-acp-app defaults; set your own on this row (`id: acp-buzz`) in the
 # profile's cordis.patch.yml, as you would on `acp` without this bundle.
+#
+# The upload rows live here, not in a profile, so that each profile with this
+# bundle uploads nothing, also one made without scripts/setup-buzz-profile.
+# dsh-base defines all three. They add session logs and package lists to model
+# requests, and export session telemetry. A row that a profile's own patch
+# sets later still wins, as for any row.
+- id: session-log-deepseek
+  config:
+    enabled: false
+
+- id: plugin-package-inventory-deepseek
+  config:
+    enabled: false
+
+- id: session-telemetry-otel
+  disabled: true
+
 - id: acp
   disabled: true
 
