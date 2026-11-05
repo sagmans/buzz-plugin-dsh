@@ -6,6 +6,7 @@
 // and `gooseRun` is how the native Goose type runs on it (turns, session
 // controls, synced settings, resume), bundled unchanged; the build swaps its
 // process adapter and sessions module (scripts/build-plugin.mjs, SWAPS).
+import { showSettingsIcon } from "./settings-icon";
 import { gooseRun } from "@app/bundled/goose/run";
 import { GooseRuntime } from "@app/bundled/goose/runtime";
 import { repositoriesContext } from "@app/features/communities/repositories";
@@ -45,6 +46,7 @@ export function apply(ctx: Context) {
   const { agents, host, react } = ctx;
   // First: the bundled app components render with Buzz's React only.
   bindReact(react);
+  ctx.effect(showSettingsIcon);
   // Only the desktop app can start `dsh`, serve MCP to it and read the files
   // its tools attach; no unusable type elsewhere.
   if (!host.spawn || !host.resolveDirectory || !host.readFile || !host.serveMcp)

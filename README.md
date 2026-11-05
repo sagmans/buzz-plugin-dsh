@@ -133,6 +133,10 @@ answer per profile, with the command for your profile.
 
 ## Limits
 
+- Buzz draws icons only for its bundled plugins, so this plugin adds its own to
+  its row and details panel in Settings, by editing that page. The build checks
+  the page at the pinned app revision. If a newer app changes the page, the app's
+  generic icon comes back; nothing else breaks.
 - dsh has no `session/load`. After a restart the plugin uses
   `session/resume`, which restores the session with no replay. When dsh can
   no longer resume it, the conversation goes on in a new session.

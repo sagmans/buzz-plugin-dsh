@@ -11,7 +11,8 @@ src/bundled/goose/runtime.ts, src/bundled/goose/run.ts,
 src/bundled/goose/sessions.ts,
 src/features/agent-harness/acp/, src/features/agents/ActivityTranscript.tsx and
 src/buzz-mcp/, and the design system with its DeepSeek mark. The DeepSeek mark
-is DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says.
+is DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says. plugin/icon.png
+keeps that mark's geometry, redrawn in the style of Buzz's plugin icons.
 
 Through them the build holds the noble-curves, noble-hashes, noble-ciphers and
 scure-base libraries by Paul Miller, and parts of React and React DOM, Base UI,

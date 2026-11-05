@@ -70,6 +70,8 @@ const DOM_GLOBALS = [
   "matchMedia",
 ];
 const AGENT_NAME = "DshSmoke";
+/** How the bundle carries the Settings icon: one file, no asset to load. */
+const ICON_DATA_URL = "data:image/png;base64,";
 const CHAT_KIND = 9;
 /** The Buzz tools the shared host serves at the pinned buzz-app revision, as
  * Goose and Hermes get them. */
@@ -935,6 +937,61 @@ function checkPermissions(stage) {
 /** The model picker renders with real React, reads the profile's models
  * through a throwaway session, and closes it without any turn. Each model's
  * efforts reach the per-message picks. */
+/** The markup of the app's Settings row and details panel at the pinned
+ * revision, which the build checks against the clone (ICON_SLOT_MARKS). */
+function settingsSlot(id, attrs) {
+  const element = document.createElement("div");
+  element.setAttribute("id", id);
+  for (const [name, value] of attrs) element.setAttribute(name, value);
+  element.innerHTML =
+    '<span aria-hidden="true" data-category="agents"><svg class="tabler-icon tabler-icon-layout-grid"></svg></span>';
+  document.body.append(element);
+  return element;
+}
+
+/** Passes when the plugin puts its artwork on its own Settings row and details
+ * panel, on the app's tile, and leaves another plugin's row alone. */
+async function checkSettingsIcon(pluginId) {
+  const other = settingsSlot("plugin-description-other", [
+    ["data-plugin-id", "other"],
+  ]);
+  const row = settingsSlot("row", [
+    ["data-plugin-id", pluginId],
+    ["aria-expanded", "true"],
+  ]);
+  const anchor = document.createElement("span");
+  anchor.id = `plugin-description-${pluginId}`;
+  row.append(anchor);
+  const details = settingsSlot("plugin-details", []);
+  const painted = (slot) => slot.querySelector("img")?.getAttribute("src");
+  await until("the Settings icons", () => painted(row) && painted(details));
+  for (const slot of [row, details]) {
+    if (!painted(slot).startsWith(ICON_DATA_URL))
+      throw new SmokeError(`not an inline icon: ${painted(slot).slice(0, 32)}`);
+    if (!slot.querySelector("span").hasAttribute("data-branded"))
+      throw new SmokeError("the icon is not on the app's tile");
+    if (slot.querySelector("svg").style.display !== "none")
+      throw new SmokeError("the generic icon still shows");
+  }
+  if (painted(other)) throw new SmokeError("painted another plugin's row");
+  log("settings-icon", "on the row and the details panel, on the tile");
+  return { row, details, other };
+}
+
+/** Passes when disabling the plugin puts the app's generic icon back. */
+function checkSettingsIconRemoved({ row, details, other }) {
+  for (const slot of [row, details]) {
+    if (slot.querySelector("img"))
+      throw new SmokeError("the icon stayed after the plugin stopped");
+    if (slot.querySelector("span").hasAttribute("data-branded"))
+      throw new SmokeError("the tile stayed after the plugin stopped");
+    if (slot.querySelector("svg").style.display === "none")
+      throw new SmokeError("the generic icon stayed hidden");
+  }
+  for (const slot of [row, details, other]) slot.remove();
+  log("settings-icon-removed", "the generic icon is back");
+}
+
 async function checkViews(stage, profile) {
   const { type, app, workspace } = stage;
   const root = app.client.createRoot(app.root);
@@ -1762,8 +1819,10 @@ async function main() {
     app,
     Boolean(options.realProfiles),
   );
+  let iconSlots;
   try {
     stage.apply();
+    iconSlots = await checkSettingsIcon(manifest.id);
     if (options.realProfiles) {
       // A live turn must name the model the spend was approved for: a profile
       // default can be another provider.
@@ -1785,6 +1844,7 @@ async function main() {
     await stage.close();
     rmSync(workspace, { recursive: true, force: true });
   }
+  if (iconSlots) checkSettingsIconRemoved(iconSlots);
 }
 
 main().then(

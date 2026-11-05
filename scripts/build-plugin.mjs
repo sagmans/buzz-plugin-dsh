@@ -41,8 +41,19 @@ export const BUZZ_APP_REV = "56729773f48d3f922a043ac83b7faa727bcfc9c2";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLONE_LINK = join(ROOT, "buzz-app");
 const MANIFEST = join(ROOT, "plugin", "manifest.json");
+const ICON = join(ROOT, "plugin", "icon.png");
 const ENTRY = join(ROOT, "src", "index.ts");
 const OUT_NAME = "plugin.js";
+/** What src/settings-icon.ts relies on in the app's Settings page. Pinned here so
+ * that a new BUZZ_APP_REV which changes that page stops the build, not only the
+ * icon. */
+const ICON_SLOT_MARKS = [
+  "data-plugin-id={id}",
+  "`plugin-description-",
+  'id="plugin-details"',
+  "<SquaresFourIcon",
+  "data-branded=",
+];
 /** The CSS asset Vite makes from bundled CSS modules. It is never written:
  * Buzz loads no plugin CSS and already has these styles (FORBIDDEN). */
 const DROPPED_CSS_NAME = "dropped-styles";
@@ -169,6 +180,18 @@ function run(
 /** The clone, checked: buzz-app, at the pinned revision, no local edits to any
  * tracked file: its source is what the bundle copies, so an edit there changes the
  * plugin as much as one in src/. */
+/** Stops the build when the app's Settings page no longer has what
+ * src/settings-icon.ts looks for. */
+function checkIconSlot(app) {
+  const page = readFileSync(join(app, "src", "app", "Settings.tsx"), "utf8");
+  const missing = ICON_SLOT_MARKS.filter((mark) => !page.includes(mark));
+  if (missing.length)
+    throw new BuildError(
+      `the app's Settings page changed, src/settings-icon.ts must follow: ${missing.join(", ")}`,
+      { exit: EXIT_CONFIG },
+    );
+}
+
 function clone() {
   if (!existsSync(CLONE_LINK))
     throw new BuildError(
@@ -397,6 +420,7 @@ async function bundle(app, out) {
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, OUT_NAME), chunk.code);
   copyFileSync(MANIFEST, join(out, "manifest.json"));
+  copyFileSync(ICON, join(out, "icon.png"));
   console.log(
     `built ${join(out, OUT_NAME)} (${Math.round(chunk.code.length / 1024)} KiB, buzz-app ${BUZZ_APP_REV})`,
   );
@@ -405,6 +429,7 @@ async function bundle(app, out) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const app = clone();
+  checkIconSlot(app);
   checkInstall();
   run("type check", TSC, ["--noEmit", "-p", join(ROOT, "tsconfig.json")], {
     timeout: TSC_TIMEOUT_MS,

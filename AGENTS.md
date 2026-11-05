@@ -25,6 +25,7 @@ behavior.
 | `src/session-files.ts`, `src/session-transcript.ts` | dsh's session store, read for Activity: its `session/list` and files. Reads only. |
 | `src/recorder.ts`, `src/history.ts` | Local records of the wire for Activity and usage. The code stays the same as the other ACP harness plugins' copies, import paths aside, so a fix ports by copying. |
 | `src/react-host.ts` | Every `react` import in the bundle: forwards to the app's React. |
+| `src/settings-icon.ts`, `plugin/icon.png` | The plugin's icon in Settings, which the app does not draw for an external plugin. |
 | `src/save-footer.tsx` | Puts the Settings Save action in the panel's sticky footer. |
 | `scripts/build-plugin.mjs` | Type check and bundle: source from the pinned buzz-app clone (`BUZZ_APP_REV`), every package from this repository's lockfile. |
 | `scripts/link-toolchain` | Makes the gitignored `buzz-app` link to the clone. |
