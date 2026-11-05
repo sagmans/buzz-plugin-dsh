@@ -169,9 +169,9 @@ answer per profile, with the command for your profile.
   The app's own agents open it in a panel tab. The plugin API does not give
   that part of the app to plugins.
 - The Activity tab does not load remote images in a transcript.
-- An agent cannot set a static WebP picture that needs a pixel change. The app
-  does that work in a web worker, and an installed plugin is one file. The tool
-  tells the agent to use a PNG or JPEG. PNG, JPEG and GIF work.
+- A static WebP picture with a color profile or a rotation uploads as a PNG
+  with the same pixels, not as a WebP. The app encodes WebP in a web worker,
+  and an installed plugin is one file. Other pictures keep their format.
 - The Settings tab does not warn about unsaved changes when you leave it.
   The plugin API does not give that part of the app to plugins.
 
