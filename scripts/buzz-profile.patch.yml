@@ -1,0 +1,13 @@
+# Added by scripts/setup-buzz-profile. A Buzz agent's profile uploads nothing:
+# these rows turn off each upload that dsh's ACP template loads.
+
+- id: session-log-deepseek
+  config:
+    enabled: false
+
+- id: plugin-package-inventory-deepseek
+  config:
+    enabled: false
+
+- id: session-telemetry-otel
+  disabled: true

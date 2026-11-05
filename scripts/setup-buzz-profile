@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Creates the dsh profile that the plugin runs agents on (README, "The buzz
+# profile").
+#
+# Why: Buzz has its own profile, so no other dsh profile needs the Buzz bundle
+# or changes for it. The steps are the same on each computer, and they keep the
+# uploads off that this profile must never make. dsh's own template command
+# replaces a profile that exists, so this script refuses to run on one.
+#
+# Usage: scripts/setup-buzz-profile
+#   DSH_HOME  dsh's home folder, as dsh reads it (default: ~/.dsh)
+#
+# It writes only inside that one new profile folder. It holds no key: dsh reads
+# provider keys from the environment that the profile's patch names.
+set -euo pipefail
+
+readonly EX_CONFIG=78
+readonly EX_FAILED=1
+readonly PROFILE=buzz
+# The dsh template with the ACP server, which the bundle needs.
+readonly TEMPLATE=acp
+readonly BUNDLE_DIR=dsh-acp-buzz
+readonly PATCH_ROWS=scripts/buzz-profile.patch.yml
+readonly PROFILE_PATCH=cordis.patch.yml
+readonly EMPTY_PATCH='[]'
+# The row that exists only when the bundle loaded (dsh-acp-buzz/cordis.patch.yml).
+readonly BUNDLE_ROW='id: acp-buzz'
+readonly DSH_START_TIMEOUT_SECONDS=120
+# `dsh plugin add` runs a package install for the profile.
+readonly DSH_ADD_TIMEOUT_SECONDS=300
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+# shellcheck source-path=SCRIPTDIR source=../.githooks/lib/tools.sh
+. "$repo_root/.githooks/lib/tools.sh"
+
+die() {
+	echo "setup-buzz-profile: $2" >&2
+	exit "$1"
+}
+
+dsh_home=${DSH_HOME:-$HOME/.dsh}
+profile_dir="$dsh_home/profiles/$PROFILE"
+
+command -v dsh >/dev/null || die "$EX_CONFIG" "dsh is not on PATH: install DeepSeek Harness first"
+[ -d "$repo_root/$BUNDLE_DIR" ] || die "$EX_CONFIG" "no $BUNDLE_DIR folder in $repo_root"
+[ -f "$repo_root/$PATCH_ROWS" ] || die "$EX_CONFIG" "no $PATCH_ROWS in $repo_root"
+[ ! -e "$profile_dir" ] || die "$EX_CONFIG" "$profile_dir exists: this script never replaces a profile"
+
+# A failure after this point leaves a part-made profile. It stays for the
+# owner to read: the message names it, and a new run refuses until it is gone.
+failed() {
+	die "$EX_FAILED" "$1. $profile_dir is not complete: read it, move it away, then run this again"
+}
+
+run_with_timeout "$DSH_START_TIMEOUT_SECONDS" dsh --from-default-profile "$TEMPLATE" --profile "$PROFILE" --help >/dev/null ||
+	failed "dsh could not make the profile from its $TEMPLATE template"
+[ -d "$profile_dir" ] || failed "dsh made no profile folder"
+run_with_timeout "$DSH_ADD_TIMEOUT_SECONDS" dsh plugin --profile "$PROFILE" add "link:$repo_root/$BUNDLE_DIR" ||
+	failed "dsh could not add the bundle"
+# The template's patch is an empty YAML array, which rows cannot follow.
+patch_file="$profile_dir/$PROFILE_PATCH"
+patch_header=$(grep -vxF "$EMPTY_PATCH" -- "$patch_file") || failed "cannot read $PROFILE_PATCH"
+{
+	printf '%s\n\n' "$patch_header"
+	cat -- "$repo_root/$PATCH_ROWS"
+} >"$patch_file" || failed "cannot write $PROFILE_PATCH"
+run_with_timeout "$DSH_START_TIMEOUT_SECONDS" dsh --profile "$PROFILE" --dump-config | grep -qF -- "$BUNDLE_ROW" ||
+	failed "the profile config has no bundle row"
+
+echo "made $profile_dir"
+echo "Next: add your provider to $profile_dir/$PROFILE_PATCH, on the row '$BUNDLE_ROW' and the provider row."

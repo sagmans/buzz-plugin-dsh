@@ -1,15 +1,27 @@
 // A dsh session's event log in the app's turn-transcript model, so the app's own
 // ActivityTranscript shows it as it shows a Goose session. dsh's ACP server
-// replays nothing, so this reads the events dsh wrote (src/history.js). Their
+// replays nothing, so this reads the events dsh wrote (./session-files.ts). Their
 // format is internal to dsh: an event this does not know is left out, so a new
 // dsh version loses detail and never breaks the tab.
-import { promptMessage, promptSections } from "@buzz/features/agents/activity-transcript";
+import {
+  type PromptSection,
+  promptMessage,
+  promptSections,
+  type ToolItem,
+  type TranscriptItem,
+  type TranscriptTurn,
+} from "@app/features/agents/activity-transcript";
 
 /** Who wrote a `user/message` that is the person's own prompt. */
-const PROMPT_SOURCE = "user";
+export const PROMPT_SOURCE = "user";
 /** The context dsh adds to the first prompt. The app shows such text inside the
  * collapsed system prompt, not as something the person said. */
-const CONTEXT_SOURCES = new Set(["agent-instructions", "runtime-context", "skill-catalog", "time-context"]);
+const CONTEXT_SOURCES = new Set([
+  "agent-instructions",
+  "runtime-context",
+  "skill-catalog",
+  "time-context",
+]);
 /** dsh's own tools, as the app's standard ACP kinds that choose a tool's icon. */
 const TOOL_KINDS = new Map([
   ["bash", "execute"],
@@ -31,23 +43,40 @@ const COMPLETED = "completed";
 const FAILED = "failed";
 const COMPACTED = "Earlier turns were compacted.";
 const NOT_POSTED = "The message above was not posted";
-/** A tool's input or output kept per item: the panel has no use for more, and a
- * long session must not hold every command's full output in memory. */
-const TOOL_TEXT_LIMIT = 64 * 1024;
+const FAILED_TURN = "dsh ended the turn with an error.";
 
-const object = (value) => (value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined);
-const str = (value) => (typeof value === "string" ? value : "");
-const parts = (value) => (Array.isArray(value) ? value : []);
+type Json = Record<string, unknown>;
+export type Place = Readonly<{ channelId: string; root?: string }>;
+export type SessionEvent = Readonly<{
+  type?: unknown;
+  time?: unknown;
+  data?: unknown;
+}>;
+/** Each item type without what `push` adds; a mapped union keeps them apart. */
+type NewItem = TranscriptItem extends infer Item
+  ? Item extends TranscriptItem
+    ? Omit<Item, "id" | "at">
+    : never
+  : never;
+type SentMessage = Extract<TranscriptItem, { type: "message" | "thought" }>;
+
+export const object = (value: unknown): Json | undefined =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Json)
+    : undefined;
+const str = (value: unknown) => (typeof value === "string" ? value : "");
+const parts = (value: unknown): Json[] =>
+  Array.isArray(value) ? (value as Json[]) : [];
 
 /** The text of a message's parts of one type. */
-const textOf = (content, type = TEXT_PART) =>
+export const textOf = (content: unknown, type = TEXT_PART) =>
   parts(content)
     .filter((part) => part?.type === type)
     .map((part) => str(part.text))
     .join("\n");
 
 /** A tool call's arguments, which dsh keeps as a JSON string. */
-function argumentsOf(text) {
+function argumentsOf(text: string): Json {
   try {
     return object(JSON.parse(text)) ?? {};
   } catch {
@@ -55,7 +84,7 @@ function argumentsOf(text) {
   }
 }
 
-const pretty = (text) => {
+const pretty = (text: string) => {
   try {
     return JSON.stringify(JSON.parse(text), null, 2);
   } catch {
@@ -65,30 +94,31 @@ const pretty = (text) => {
 
 /** Folds one session's events into its latest turns, in order. */
 export class SessionTurns {
-  turns = [];
+  private readonly turns: TranscriptTurn[] = [];
   /** True when older turns were dropped to stay within the limit. */
   more = false;
-  count = 0;
-  tools = new Map();
-  sends = new Map();
+  private count = 0;
+  private readonly tools = new Map<string, ToolItem>();
+  private readonly sends = new Map<string, SentMessage>();
 
-  constructor(sessionId, place, limit) {
-    this.sessionId = sessionId;
-    this.place = place;
-    this.limit = limit;
-  }
+  constructor(
+    private readonly sessionId: string,
+    private readonly place: Place | undefined,
+    private readonly limit: number,
+  ) {}
 
-  id() {
+  private id() {
     this.count += 1;
     return `${this.sessionId}:${this.count}`;
   }
 
   /** Opens a turn. `partial` is a turn whose start is not in the log. */
-  open(at, partial) {
-    const turn = {
+  private open(at: number, partial: boolean) {
+    const channelId = this.place?.channelId ?? null;
+    const turn: TranscriptTurn = {
       turnId: this.id(),
-      channelId: this.place.channelId || null,
-      threadRootId: this.place.channelId ? (this.place.root ?? null) : undefined,
+      channelId,
+      threadRootId: channelId ? (this.place?.root ?? null) : undefined,
       triggeringEventIds: [],
       sessionId: this.sessionId,
       newSession: false,
@@ -108,26 +138,33 @@ export class SessionTurns {
     return turn;
   }
 
-  current(at) {
+  private current(at: number) {
     return this.turns.at(-1) ?? this.open(at, true);
   }
 
-  push(at, item) {
-    this.current(at).items.push({ id: this.id(), at, ...item });
+  private push(at: number, item: NewItem) {
+    this.current(at).items.push({
+      id: this.id(),
+      at,
+      ...item,
+    } as TranscriptItem);
   }
 
   /** The system prompt or added context, shown together as the app's system item. */
-  context(at, sections) {
-    const known = this.current(at).items.find((item) => item.type === SYSTEM_TAG);
-    if (known) known.sections.push(...sections);
+  private context(at: number, sections: PromptSection[]) {
+    const known = this.current(at).items.find(
+      (item) => item.type === SYSTEM_TAG,
+    );
+    if (known?.type === SYSTEM_TAG) known.sections.push(...sections);
     else this.push(at, { type: SYSTEM_TAG, sections });
   }
 
-  userMessage(at, data) {
-    const kind = object(data.source)?.kind;
+  private userMessage(at: number, data: Json) {
+    const kind = str(object(data.source)?.kind);
     const text = textOf(data.content);
     if (!text.trim()) return;
-    if (CONTEXT_SOURCES.has(kind)) return this.context(at, [{ tag: kind, body: text }]);
+    if (CONTEXT_SOURCES.has(kind))
+      return this.context(at, [{ tag: kind, body: text }]);
     // Other sources are dsh's own reminders and notices, not the person's words.
     if (kind !== PROMPT_SOURCE) return;
     const turn = this.current(at);
@@ -142,29 +179,36 @@ export class SessionTurns {
     });
   }
 
-  assistantMessage(at, data) {
+  private assistantMessage(at: number, data: Json) {
     for (const part of parts(object(data.message)?.content)) {
       const text = str(part?.text);
       if (!text.trim()) continue;
       if (part.type === THOUGHT_PART) this.push(at, { type: "thought", text });
-      else if (part.type === TEXT_PART) this.push(at, { type: "message", text });
+      else if (part.type === TEXT_PART)
+        this.push(at, { type: "message", text });
     }
   }
 
-  toolCall(at, data) {
+  private toolCall(at: number, data: Json) {
     const name = str(data.name);
     const callId = str(data.callId);
     const args = str(data.arguments);
-    const posted = SEND_TOOL.test(name) ? str(argumentsOf(args).text).trim() : "";
+    const posted = SEND_TOOL.test(name)
+      ? str(argumentsOf(args).text).trim()
+      : "";
     if (posted) {
-      const sent = { id: this.id(), at, type: "message", text: posted };
+      const sent: SentMessage = {
+        id: this.id(),
+        at,
+        type: "message",
+        text: posted,
+      };
       this.current(at).items.push(sent);
       this.sends.set(callId, sent);
       return;
     }
-    const input = pretty(args);
     const path = str(argumentsOf(args).path);
-    const tool = {
+    const tool: ToolItem = {
       id: this.id(),
       at,
       type: "tool",
@@ -172,52 +216,57 @@ export class SessionTurns {
       title: name || "Tool",
       kind: TOOL_KINDS.get(name) ?? OTHER_KIND,
       status: "in_progress",
-      input: input.slice(0, TOOL_TEXT_LIMIT),
+      input: pretty(args),
       output: "",
       diffs: [],
       paths: path ? [path] : [],
-      truncated: input.length > TOOL_TEXT_LIMIT,
+      truncated: false,
     };
     this.current(at).items.push(tool);
     this.tools.set(callId, tool);
   }
 
-  toolResult(at, data) {
+  private toolResult(at: number, data: Json) {
     const message = object(data.message);
     const callId = str(message?.toolCallId);
     const text = textOf(message?.content);
     const failed = message?.isError === true;
     const sent = this.sends.get(callId);
     if (sent) {
-      if (failed) this.push(at, { type: "status", text: `${NOT_POSTED}: ${text}` });
+      if (failed)
+        this.push(at, { type: "status", text: `${NOT_POSTED}: ${text}` });
       else sent.posted = true;
       return;
     }
     const tool = this.tools.get(callId);
     if (!tool) return;
     tool.status = failed ? FAILED : COMPLETED;
-    tool.output = text.slice(0, TOOL_TEXT_LIMIT);
-    tool.truncated ||= text.length > TOOL_TEXT_LIMIT;
+    tool.output = text;
     tool.completedAt = at;
   }
 
-  turnEnd(at, data) {
+  private turnEnd(at: number, data: Json) {
     const turn = this.turns.at(-1);
     if (!turn) return;
     const reason = object(data.reason);
+    const kind = str(reason?.kind);
     turn.endedAt = at;
-    if (reason?.kind === "error") turn.error = str(object(reason.error)?.message) || "dsh ended the turn with an error";
-    else if (reason?.kind && reason.kind !== COMPLETED) turn.stopReason = str(reason.kind);
+    if (kind === "error")
+      turn.error = str(object(reason?.error)?.message) || FAILED_TURN;
+    else if (kind && kind !== COMPLETED) turn.stopReason = kind;
   }
 
-  add({ type, time, data }) {
+  add({ type, time, data }: SessionEvent) {
     const at = typeof time === "number" ? time : 0;
     const body = object(data) ?? {};
     switch (type) {
       case "turn/start":
         return void this.open(at, false);
       case "system/message":
-        return this.context(at, promptSections(textOf(object(body.message)?.content)));
+        return this.context(
+          at,
+          promptSections(textOf(object(body.message)?.content)),
+        );
       case "user/message":
         return this.userMessage(at, body);
       case "assistant/message":
@@ -237,7 +286,9 @@ export class SessionTurns {
 
   /** The turns that hold something to show; the first one opens the session. */
   finish() {
-    const shown = this.turns.filter((turn) => turn.items.length > 0 || turn.error);
+    const shown = this.turns.filter(
+      (turn) => turn.items.length > 0 || turn.error,
+    );
     const [first] = shown;
     if (first && !first.partial) {
       if (this.more) first.continued = true;

@@ -1,5 +1,8 @@
-# Build tools for this repository. Run them through mise (`mise exec -- …`),
-# so every machine builds with the same Node.js and pnpm.
+# Tools for this repository. Run them through mise (`mise exec -- …`), so
+# every machine builds and checks with the same releases. The build tools
+# themselves (Vite, TypeScript, Biome) come from this repository's lockfile.
 [tools]
 node = "24.22.1"
 pnpm = "12.4.2"
+markdownlint-cli2 = "0.23.2"
+shfmt = "3.14.1"

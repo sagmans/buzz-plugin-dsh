@@ -1,32 +1,41 @@
 buzz-plugin-dsh
 Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-This product includes software adapted from Buzz (block/buzz-app),
+This product includes software from Buzz (block/buzz-app),
 Copyright 2026 Block, Inc., licensed under the Apache License, Version 2.0:
 https://github.com/block/buzz-app
 
-- src/owner.js: the owner and NIP-OA attestation checks, adapted from
-  src/features/agents/owner-attestation.ts at the revision named in its
-  header comment.
-- src/views.js: the New agent and Settings views follow
+The built plugin (dist/plugin.js) bundles buzz-app modules unchanged at the
+revision in scripts/build-plugin.mjs (BUZZ_APP_REV): among them
+src/bundled/goose/runtime.ts, src/bundled/goose/run.ts,
+src/bundled/goose/sessions.ts,
+src/features/agent-harness/acp/, src/features/agents/ActivityTranscript.tsx and
+src/buzz-mcp/, and the design system with its DeepSeek mark. The DeepSeek mark
+is DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says.
+
+Through them the build holds the noble-curves, noble-hashes, noble-ciphers and
+scure-base libraries by Paul Miller, and parts of React and React DOM, Base UI,
+Floating UI, Motion, Tabler Icons, react-markdown and remark-gfm (with the
+unified, micromark and mdast libraries they use), each licensed under the MIT
+License (@ungap/structured-clone: ISC). Their license notices stay in the build. The build replaces three modules with
+this repository's own (see the SWAPS list there).
+
+These files repeat or adapt buzz-app code; each marks it in a comment:
+
+- src/dsh.ts: the process adapter shape of src/bundled/goose/goose.ts, its
+  steering hook included.
+- src/sessions.ts: wraps src/bundled/goose/sessions.ts, and adapts its
+  SharedProcess.
+- src/index.ts: the agent type and sessions list of
+  src/bundled/goose/index.ts.
+- src/views.tsx: the New agent and Settings views of
   src/bundled/goose/tabs.tsx, built from the same buzz-app components.
-- src/activity.js, src/history.js and src/transcript.js: the Activity tab follows
-  src/bundled/goose/tabs.tsx and src/bundled/goose/transcript.ts.
-- src/react-host.js and src/save-footer.js: the same modules as in
-  buzz-plugin-opencode, which hold no buzz-app code of their own.
-
-The build also bundles buzz-app UI modules unchanged (the model picker,
-the instructions field, the design system and its DeepSeek mark), from the
-revision in scripts/build-plugin.mjs (BUZZ_APP_REV). The DeepSeek mark is
-DeepSeek's, MIT-licensed, as buzz-app's NOTICE.md says.
-
-The build (plugin/plugin.js, made on the user's computer) bundles the
-noble-curves and noble-hashes libraries by Paul Miller, and React, React
-DOM, Base UI, Floating UI, Motion and Tabler Icons for the views, and
-react-markdown and remark-gfm (with the unified, micromark and mdast libraries
-they use) for the transcripts, each licensed under the MIT License
-(@ungap/structured-clone: ISC; tslib: 0BSD). Their license notices stay in
-the build.
+- src/provider.tsx: the provider row and dialog of
+  src/bundled/goose/tabs.tsx.
+- src/activity.tsx: the Activity tab of src/bundled/goose/tabs.tsx.
+- src/session-files.ts: the reading of a harness's sessions of
+  src/bundled/goose/transcript.ts.
+- tsconfig.json: the compiler options of buzz-app's tsconfig.json.
 
 The build also bundles @hpcc-js/wasm-zstd by HPCC Systems, licensed under the
 Apache License, Version 2.0, for the transcripts. It holds a WebAssembly build
@@ -34,4 +43,5 @@ of Zstandard by Meta Platforms, Inc., licensed under the BSD License:
 https://github.com/facebook/zstd
 
 DeepSeek Harness (dsh) is a separate program. This plugin does not include
-it; it starts the copy that the user installed.
+it; it starts the copy that the user installed. This plugin is not
+affiliated with or endorsed by DeepSeek or Block, Inc.

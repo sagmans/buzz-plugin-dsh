@@ -1,11 +1,14 @@
 # macOS Finder metadata
 .DS_Store
-# pnpm installs the pinned build tool and libraries here (pnpm-lock.yaml)
-node_modules/
-# The build output: made from src/ on each machine (scripts/build-plugin.mjs)
+# Build output: the installable plugin is built from src/ and a local buzz-app
+# clone (README, "Build"), so it never ships in the source.
+/dist/
+# The old build output: a checkout that built before the move to dist/ still
+# has it, and it must not become a file to commit.
 /plugin/plugin.js
+# Link to the local buzz-app clone (scripts/link-toolchain).
+/buzz-app
+/node_modules/
 # Throwaway files from local dogfood runs
 .scratch/
 *.log
-# Link to a local buzz-app clone (scripts/link-toolchain)
-/buzz-app

@@ -1,0 +1,27 @@
+{
+  "name": "@sagmans/dsh-acp-buzz",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dsh profile bundle: dsh's ACP server with steering, a /compact turn and per-prompt usage for the Buzz DSH plugin.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@agentclientprotocol/sdk": ">=1.4.0 <2.0.0",
+    "@deepseek-ai/dsh-acp": ">=0.2.1-0 <0.3.0-0",
+    "@deepseek-ai/dsh-llm": ">=0.2.1-0 <0.3.0-0"
+  }
+}

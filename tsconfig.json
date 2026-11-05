@@ -1,0 +1,33 @@
+{
+  "//": "Type check of src/ with the buzz-app clone at the pinned revision (the buzz-app link, scripts/build-plugin.mjs). Same strict options as buzz-app, so its modules type-check here as they do there.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "ES2023.Array", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "preserveSymlinks": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@app/*": ["./buzz-app/src/*"],
+      "react-bundled": ["./node_modules/@types/react/index.d.ts"]
+    }
+  },
+  "include": [
+    "src",
+    "buzz-app/src/plugins/api.ts",
+    "buzz-app/src/shared/design-system/icons/tabler.d.ts"
+  ]
+}

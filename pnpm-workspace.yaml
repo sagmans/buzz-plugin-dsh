@@ -6,7 +6,7 @@
 minimumReleaseAge: 20160
 minimumReleaseAgeStrict: true
 
-# A flat node_modules: the build keeps symlinks (vite.config.js), so every
+# A flat node_modules: the build keeps symlinks (scripts/build-plugin.mjs), so every
 # package, also a dependency of a dependency, must be found by a plain walk
 # up from node_modules.
 nodeLinker: hoisted
@@ -14,3 +14,8 @@ nodeLinker: hoisted
 # Install scripts stay off, and a package that asks for one stops the install:
 # none of these packages needs one to build.
 strictDepBuilds: true
+# buzz-app's composer code is written against these exact versions, which its
+# own lockfile pins. A newer one in a nested dependency breaks its types.
+overrides:
+  mdast-util-from-markdown: 2.0.3
+  mdast-util-to-markdown: 2.1.2

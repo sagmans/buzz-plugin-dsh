@@ -1,6 +1,7 @@
-// Every `react` import in the bundle resolves here (vite.config.js), so the
-// buzz-app components this plugin bundles (ModelPicker, AgentInstructions,
-// the design system) render with Buzz's own React, from `ctx.react`. A
+// Every `react` import in the bundle resolves here (scripts/build-plugin.mjs),
+// so the buzz-app components this plugin bundles (ModelPicker,
+// AgentInstructions, the design system) render with Buzz's own React, from
+// `ctx.react`. A
 // second React would break hooks: Buzz renders the plugin's components, and
 // hooks only work with the React that renders them.
 //
@@ -12,11 +13,12 @@
 // a module kept in a variable while it loaded still reaches Buzz's React.
 import * as Bundled from "react-bundled";
 
-/** The React that hooks reach: the bundled copy until `bindReact` runs. */
-let current = Bundled;
+type ReactModule = typeof import("react");
+
+let current: ReactModule = Bundled as unknown as ReactModule;
 
 /** Binds Buzz's React; `apply(ctx)` calls it before it registers any view. */
-export function bindReact(react) {
+export function bindReact(react: ReactModule): void {
   if (react.version !== Bundled.version)
     throw new Error(
       `This build bundles React ${Bundled.version}, but Buzz runs React ${react.version}. Rebuild the plugin for this Buzz version.`,
@@ -25,8 +27,11 @@ export function bindReact(react) {
 }
 
 /** A stable function that calls the bound React's export of that name. */
-function forward(name) {
-  return (...args) => current[name](...args);
+function forward<K extends keyof ReactModule>(name: K): ReactModule[K] {
+  return ((...args: unknown[]) =>
+    (current[name] as unknown as (...a: unknown[]) => unknown)(
+      ...args,
+    )) as unknown as ReactModule[K];
 }
 
 // Element type tags and classes: global symbols and plain classes, the same
@@ -43,11 +48,11 @@ export const {
   version,
   __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
   __COMPILER_RUNTIME,
-} = Bundled;
+} = Bundled as unknown as ReactModule & Record<string, unknown>;
 
 export const act = forward("act");
 export const cache = forward("cache");
-export const cacheSignal = forward("cacheSignal");
+export const cacheSignal = forward("cacheSignal" as keyof ReactModule);
 export const captureOwnerStack = forward("captureOwnerStack");
 export const cloneElement = forward("cloneElement");
 export const createContext = forward("createContext");
@@ -58,7 +63,9 @@ export const isValidElement = forward("isValidElement");
 export const lazy = forward("lazy");
 export const memo = forward("memo");
 export const startTransition = forward("startTransition");
-export const unstable_useCacheRefresh = forward("unstable_useCacheRefresh");
+export const unstable_useCacheRefresh = forward(
+  "unstable_useCacheRefresh" as keyof ReactModule,
+);
 export const use = forward("use");
 export const useActionState = forward("useActionState");
 export const useCallback = forward("useCallback");
@@ -66,7 +73,7 @@ export const useContext = forward("useContext");
 export const useDebugValue = forward("useDebugValue");
 export const useDeferredValue = forward("useDeferredValue");
 export const useEffect = forward("useEffect");
-export const useEffectEvent = forward("useEffectEvent");
+export const useEffectEvent = forward("useEffectEvent" as keyof ReactModule);
 export const useId = forward("useId");
 export const useImperativeHandle = forward("useImperativeHandle");
 export const useInsertionEffect = forward("useInsertionEffect");

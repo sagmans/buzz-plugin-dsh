@@ -1,0 +1,19 @@
+# dsh-acp-buzz: dsh's ACP server behind the Buzz bridge.
+#
+# A patch cannot swap the module of an existing row, so the base `acp` row
+# is disabled and this row runs the same server through the bridge. List
+# this bundle after `@deepseek-ai/dsh-acp-app` so the `acp` row exists.
+#
+# A patch replaces a row's whole config. The provider and model below are
+# the dsh-acp-app defaults; set your own on this row (`id: acp-buzz`) in the
+# profile's cordis.patch.yml, as you would on `acp` without this bundle.
+- id: acp
+  disabled: true
+
+- insert:
+    - id: acp-buzz
+      name: '@sagmans/dsh-acp-buzz'
+      inject: [acpAppStartup]
+      config:
+        provider: deepseek-official
+        model: deepseek-v4-flash
