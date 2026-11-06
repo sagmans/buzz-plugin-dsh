@@ -26,6 +26,7 @@ readonly BUNDLE_DIR=dsh-acp-buzz
 # can install it, and the profile's lockfile holds its integrity hash.
 readonly AUTO_COMPACT_PACKAGE=@sagmans/dsh-auto-compact@0.2.1
 readonly PATCH_ROWS=scripts/buzz-profile.patch.yml
+readonly CATALOG_SYNC=scripts/sync-buzz-catalog.mjs
 readonly PROFILE_PATCH=cordis.patch.yml
 readonly EMPTY_PATCH='[]'
 # The row that exists only when the bundle loaded (dsh-acp-buzz/cordis.patch.yml).
@@ -61,8 +62,10 @@ dsh_home=${DSH_HOME:-$HOME/.dsh}
 profile_dir="$dsh_home/profiles/$PROFILE"
 
 command -v dsh >/dev/null || die "$EX_CONFIG" "dsh is not on PATH: install DeepSeek Harness first"
+command -v node >/dev/null || die "$EX_CONFIG" "node is not on PATH: the catalog sync needs it"
 [ -d "$repo_root/$BUNDLE_DIR" ] || die "$EX_CONFIG" "no $BUNDLE_DIR folder in $repo_root"
 [ -f "$repo_root/$PATCH_ROWS" ] || die "$EX_CONFIG" "no $PATCH_ROWS in $repo_root"
+[ -f "$repo_root/$CATALOG_SYNC" ] || die "$EX_CONFIG" "no $CATALOG_SYNC in $repo_root"
 [ ! -e "$profile_dir" ] || die "$EX_CONFIG" "$profile_dir exists: this script never replaces a profile"
 
 # True when the top-level row in the config on stdin holds the exact line.
@@ -96,6 +99,11 @@ patch_header=$(grep -vxF "$EMPTY_PATCH" -- "$patch_file") || failed "cannot read
 	printf '%s\n\n' "$patch_header"
 	cat -- "$repo_root/$PATCH_ROWS"
 } >"$patch_file" || failed "cannot write $PROFILE_PATCH"
+# The desktop profile is the owner's model catalog. Copy it into this profile
+# so a new Buzz agent offers the same models, and no key ever leaves the
+# environment. A machine without a desktop profile keeps the bundle defaults.
+DSH_HOME="$dsh_home" node "$repo_root/$CATALOG_SYNC" --profile "$PROFILE" --quiet ||
+	failed "the catalog sync could not copy the desktop model catalog"
 config_dump=$(run_with_timeout "$DSH_START_TIMEOUT_SECONDS" dsh --profile "$PROFILE" --dump-config) ||
 	failed "dsh could not show the profile config"
 grep -qF -- "$BUNDLE_ROW" <<<"$config_dump" ||
@@ -112,4 +120,4 @@ for row_off in "${UPLOAD_ROWS_OFF[@]}"; do
 done
 
 echo "made $profile_dir"
-echo "Next: add your provider to $profile_dir/$PROFILE_PATCH, on the row '$BUNDLE_ROW' and the provider row."
+echo "Next: set the provider and model on the '$BUNDLE_ROW' row in $profile_dir/$PROFILE_PATCH. The desktop catalog is copied when that profile exists."

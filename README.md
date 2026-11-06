@@ -91,10 +91,14 @@ scripts/setup-buzz-profile
 The script refuses to run when the profile exists. It adds
 [`@sagmans/dsh-auto-compact`](https://github.com/sagmans/dsh-auto-compact), so
 sessions condense near 250000 tokens. To change that value, edit
-`thresholdTokens` on the `auto-compact` row of the profile's patch. Then add your
-provider to `$DSH_HOME/profiles/buzz/cordis.patch.yml` (default `DSH_HOME` is
-`~/.dsh`), on the `acp-buzz` row and the provider row. Keep each key in the
-environment, not in that file.
+`thresholdTokens` on the `auto-compact` row of the profile's patch. It also
+copies the `llm-pi-ai` provider rows from the `desktop` profile, when that
+profile exists, so Buzz offers the same models as the desktop app. After the
+desktop catalog changes, run `scripts/sync-buzz-catalog.mjs` (or add `--check`
+to report a difference without writing). Then set the provider and model on the
+`acp-buzz` row of `$DSH_HOME/profiles/buzz/cordis.patch.yml` (default
+`DSH_HOME` is `~/.dsh`) to one that the copied catalog offers. Keep each key in
+the environment, not in that file.
 
 Without the profile, dsh stops at the start of a turn and says that the profile
 does not exist.

@@ -35,6 +35,7 @@ behavior.
 | `scripts/fake-acp.mjs` | The stand-in dsh ACP server, with and without the bundle. |
 | `dsh-acp-buzz/` | dsh profile bundle: steering, run ids, compaction, usage. It runs inside dsh and keeps that project's style. It has its own `smoke.mjs`. |
 | `scripts/setup-buzz-profile`, `scripts/buzz-profile.patch.yml` | Makes the `buzz` dsh profile that agents run on. |
+| `scripts/sync-buzz-catalog.mjs` | Copies the desktop profile's `llm-pi-ai` model catalog into the Buzz profile. |
 | `scripts/check` | All repository checks. The Git hooks call it. |
 | `scripts/setup-hooks`, `.githooks/` | Generic hooks and helpers, copied from a template. |
 | `.githooks/<hook>.d/` | This repository's own hook checks. |
