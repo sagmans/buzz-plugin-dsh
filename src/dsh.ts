@@ -270,37 +270,39 @@ export class DshWire {
     return text.endsWith(LED_COMPACT) ? NOTHING_TO_COMPACT : undefined;
   }
 
-  private write(line: string): string | undefined {
-    const message = line.trim() ? parse(line) : undefined;
-    if (!message) return line;
-    if (message.method === SESSION_PROMPT && typeof message.id === "number") {
-      const refusal = this.refusal(message.params ?? {});
-      if (refusal === undefined) return line;
-      this.refuse(message.id, refusal);
-      return undefined;
-    }
-    if (message.method === STEER && !Object.keys(message.params ?? {}).length) {
-      if (typeof message.id === "number") this.probe = message.id;
-      return line;
-    }
-    if (message.method === SESSION_CLOSE) {
-      const sessionId = message.params?.sessionId;
-      if (typeof sessionId === "string") {
-        this.opened.delete(sessionId);
-        sessionStates.delete(sessionId);
-      }
-      return line;
-    }
-    if (message.method !== SESSION_NEW || typeof message.id !== "number")
-      return line;
+  /** Turns a prompt request into an error answer when dsh must not get it, so
+   * `write` keeps one path per method. */
+  private guardPrompt(
+    id: number,
+    params: Record<string, unknown>,
+    line: string,
+  ): string | undefined {
+    const refusal = this.refusal(params);
+    if (refusal === undefined) return line;
+    this.refuse(id, refusal);
+    return undefined;
+  }
+
+  /** Drops what is kept for a session the client closed, so a closed id does
+   * not hold state for the rest of the process. */
+  private forget(sessionId: unknown) {
+    if (typeof sessionId !== "string") return;
+    this.opened.delete(sessionId);
+    sessionStates.delete(sessionId);
+  }
+
+  /** Sends `session/new` on to dsh as is, or as a resume when the client gave
+   * a session to resume; the new request stays as the fallback for a resume
+   * that fails. */
+  private openOrResume(message: Message, id: number): string {
     const { _meta: meta, ...params } = message.params ?? {};
     const open = JSON.stringify({ ...message, params });
     const resume = record(meta)?.[META_KEY] as Resume | undefined;
     if (!resume) {
-      this.opening.add(message.id);
+      this.opening.add(id);
       return open;
     }
-    this.resuming.set(message.id, { ...resume, fallback: open });
+    this.resuming.set(id, { ...resume, fallback: open });
     return JSON.stringify({
       ...message,
       method: SESSION_RESUME,
@@ -310,6 +312,24 @@ export class DshWire {
         mcpServers: params.mcpServers,
       },
     });
+  }
+
+  private write(line: string): string | undefined {
+    const message = line.trim() ? parse(line) : undefined;
+    if (!message) return line;
+    if (message.method === SESSION_PROMPT && typeof message.id === "number")
+      return this.guardPrompt(message.id, message.params ?? {}, line);
+    if (message.method === STEER && !Object.keys(message.params ?? {}).length) {
+      if (typeof message.id === "number") this.probe = message.id;
+      return line;
+    }
+    if (message.method === SESSION_CLOSE) {
+      this.forget(message.params?.sessionId);
+      return line;
+    }
+    if (message.method !== SESSION_NEW || typeof message.id !== "number")
+      return line;
+    return this.openOrResume(message, message.id);
   }
 
   private read(line: string): string[] {
