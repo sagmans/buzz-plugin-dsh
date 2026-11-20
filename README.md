@@ -199,8 +199,8 @@ then build and run `scripts/check`.
 
 ## Build
 
-You need the Node.js and pnpm releases pinned in `mise.toml` (24.22.3+ and
-12.22.0+) and a buzz-app clone at the pinned revision.
+You need the Node.js and pnpm releases pinned in `mise.toml` and a buzz-app
+clone at the pinned revision.
 The clone needs no install: the build uses this repository's Vite, TypeScript
 and Biome.
 
@@ -220,11 +220,11 @@ comes from the app at run time (`src/react-host.ts`).
 ## Checks
 
 Run `scripts/setup-hooks` once after you clone. Install the tools in
-`mise.toml` (`mise install`), plus `gitleaks`, `shellcheck`, `lizard`,
-`semgrep` and `trivy`.
+`mise.toml` (`mise install`), plus `gitleaks`, `shellcheck`, `semgrep`, `trivy`
+and `osv-scanner`.
 
-- `scripts/check --quick`: syntax, manifest grant, format and lint, private
-  data guard. The pre-commit hook runs it.
+- `scripts/check --quick`: syntax (JS, JSON, YAML), manifest grant, format and
+  lint (Biome), shell lint, private data guard. The pre-commit hook runs it.
 - `scripts/check`: all of the above, then Markdown lint, complexity, semgrep,
   trivy, the build, the smoke run and the bundle's smoke run. The pre-push
   hook runs it on each pushed commit.

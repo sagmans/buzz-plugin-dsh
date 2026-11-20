@@ -136,7 +136,10 @@ class AcpBridge {
     const { method, id } = message;
     if (method === METHOD_NEW) this.pending.set(id, { kind: METHOD_NEW });
     else if (method === METHOD_RESUME || method === METHOD_CLOSE)
-      this.pending.set(id, { kind: method, sessionId: message.params?.sessionId });
+      this.pending.set(id, {
+        kind: method,
+        sessionId: message.params?.sessionId,
+      });
   }
 
   /** Applies dsh's answer to the router state; returns what the client gets. */
@@ -144,7 +147,10 @@ class AcpBridge {
     const ok = message.result !== undefined && message.error === undefined;
     if (entry.kind === METHOD_PROMPT) return this.endPrompt(entry, message, ok);
     if (!ok) return message;
-    if (entry.kind === METHOD_NEW && typeof message.result.sessionId === "string")
+    if (
+      entry.kind === METHOD_NEW &&
+      typeof message.result.sessionId === "string"
+    )
       this.sessions.add(message.result.sessionId);
     else if (entry.kind === METHOD_RESUME) this.sessions.add(entry.sessionId);
     else if (entry.kind === METHOD_CLOSE) this.sessions.delete(entry.sessionId);
@@ -218,7 +224,11 @@ class AcpBridge {
       this.deps.logger.warn(
         `acp-buzz: steer failed session=${message.params?.sessionId ?? "none"}: ${error?.message ?? String(error)}`,
       );
-      return errorMessage(message.id, INTERNAL_ERROR, "steer failed inside dsh");
+      return errorMessage(
+        message.id,
+        INTERNAL_ERROR,
+        "steer failed inside dsh",
+      );
     }
   }
 
@@ -235,7 +245,8 @@ class AcpBridge {
       reject("no-run", "no prompt is in flight for this session");
     if (run.runId !== expectedRunId)
       reject("run-mismatch", "the prompt in flight is not the expected run");
-    if (run.cancelled) reject("cancelled", "the prompt in flight was cancelled");
+    if (run.cancelled)
+      reject("cancelled", "the prompt in flight was cancelled");
     const agent = this.deps.agents.get(sessionId);
     // The status check and steer() run in one tick: dsh's loop goes idle
     // only after its own synchronous inbox check, so a steer accepted while
@@ -260,7 +271,9 @@ class AcpBridge {
         ? BUSY_PROMPT_TEXT
         : undefined;
     if (refusal !== undefined)
-      return this.deps.toClient(errorMessage(message.id, INVALID_PARAMS, refusal));
+      return this.deps.toClient(
+        errorMessage(message.id, INVALID_PARAMS, refusal),
+      );
     const controller = new AbortController();
     this.compactions.set(sessionId, controller);
     // The compaction may take minutes; the message loop must keep serving

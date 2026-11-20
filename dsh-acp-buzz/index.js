@@ -61,7 +61,9 @@ export function apply(ctx, config) {
     ...config,
     stream: {
       readable: toServer.readable,
-      writable: new WritableStream({ write: (message) => bridge.fromServer(message) }),
+      writable: new WritableStream({
+        write: (message) => bridge.fromServer(message),
+      }),
     },
   });
   const reader = outer.readable.getReader();
@@ -87,7 +89,9 @@ async function pumpClient(logger, reader, bridge, serverWriter) {
     }
     await serverWriter.close();
   } catch (error) {
-    logger.warn(`acp-buzz: client stream failed: ${error?.message ?? String(error)}`);
+    logger.warn(
+      `acp-buzz: client stream failed: ${error?.message ?? String(error)}`,
+    );
     await serverWriter.abort(error).catch(() => undefined);
   }
 }

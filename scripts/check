@@ -55,10 +55,15 @@ BUNDLE_UPLOAD_ROWS=(
 	'plugin-package-inventory-deepseek:    enabled: false'
 	'session-telemetry-otel:  disabled: true'
 )
-# buzz-app's formatter at this repository's pin, with the config buzz-app's code
-# follows, which the clone holds.
+# buzz-app's formatter and linter at this repository's pin, with the config
+# buzz-app's code follows, which the clone holds.
 BIOME_BIN=node_modules/.bin/biome
 BIOME_CONFIG=biome.json
+BIOME_PACKAGE=@biomejs/biome
+BIOME_VERSION_RE='Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)'
+MISE_CONFIG=mise.toml
+PACKAGE_JSON=package.json
+YAML_PACKAGE=yaml
 # Buzz manifest limits (buzz-app crates/plugin-manager): id shape and length,
 # description size in bytes.
 MANIFEST_ID_RE='^[a-z][a-z0-9.-]{0,79}$'
@@ -111,7 +116,11 @@ PRIVATE_PATTERNS=(
 PRIVATE_ALLOWED_RE='@example\.(com|org|net|invalid)|^git@github\.com$'
 # Files copied from the hook template stay byte-identical to it, so their
 # style is the template's concern; repo-owned shell lives elsewhere.
-TEMPLATE_SHELL_RE='^(\.githooks/[^/]+|\.githooks/lib/.*|scripts/setup-hooks)$'
+TEMPLATE_HOOK_RE='^\.githooks/lib/|^\.githooks/[^/]+$'
+TEMPLATE_SHELL_RE="($TEMPLATE_HOOK_RE|^scripts/setup-hooks$)"
+# Lockfile YAML is judged by pnpm --frozen-lockfile; repo YAML patches are parsed
+# directly with the pinned yaml package.
+YAML_SKIP_RE="($TEMPLATE_HOOK_RE|^pnpm-lock\\.yaml$)"
 
 quick=0
 if [ "${1:-}" = --quick ]; then
@@ -121,6 +130,28 @@ fi
 default_target="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$REPO_TOP")"
 target="$(cd "${1:-$default_target}" && pwd -P)"
 cd "$target"
+
+# Resolve pinned CLI tools directly from this checkout's mise.toml before shims
+# or ambient PATH, and ignore any untrusted mise.toml inside a temporary staged
+# snapshot or commit worktree.
+use_mise_tools() {
+	local mise_dir="$1" checked_dir="$2" bins dir prefix=""
+	if [ "$checked_dir" != "$mise_dir" ]; then
+		MISE_IGNORED_CONFIG_PATHS="${MISE_IGNORED_CONFIG_PATHS:+$MISE_IGNORED_CONFIG_PATHS:}$checked_dir"
+		export MISE_IGNORED_CONFIG_PATHS
+	fi
+	command -v mise >/dev/null 2>&1 || return 0
+	[ ! -L "$mise_dir/$MISE_CONFIG" ] && [ -f "$mise_dir/$MISE_CONFIG" ] || return 0
+	bins="$(MISE_OFFLINE=1 mise -C "$mise_dir" bin-paths </dev/null 2>/dev/null || true)"
+	[ -n "$bins" ] || return 0
+	while IFS= read -r dir; do
+		[ -n "$dir" ] || continue
+		prefix="${prefix:+$prefix:}$dir"
+	done <<<"$bins"
+	[ -n "$prefix" ] && PATH="$prefix:$PATH"
+	export PATH
+}
+use_mise_tools "$REPO_TOP" "$target"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/repo-check.XXXXXX")"
 # Only the mktemp directory this run created, never a computed parent.
@@ -193,6 +224,31 @@ check_json() {
 	# shellcheck disable=SC2016,SC2086  # JS template literal, not shell; one path per word (spaces refused below)
 	node -e 'for (const p of process.argv.slice(1)) { try { JSON.parse(require("fs").readFileSync(p, "utf8")); } catch (e) { console.error(`  ${p}: ${e.message}`); process.exitCode = 1; } }' $list ||
 		fail "invalid JSON"
+}
+
+# Every YAML file (excluding pnpm-lock.yaml, judged by pnpm) must parse cleanly:
+# the profile patches control dsh uploads and compaction.
+check_yaml() {
+	local list
+	list="$(files_with yml yaml | grep -v -E "$YAML_SKIP_RE" || true)"
+	[ -n "$list" ] || return 0
+	require_node
+	[ -d "$REPO_TOP/node_modules/$YAML_PACKAGE" ] || fail "no $YAML_PACKAGE in $REPO_TOP: run 'pnpm install --frozen-lockfile --ignore-scripts' there"
+	# shellcheck disable=SC2086  # one path per word (spaces refused below)
+	node --input-type=module - "$REPO_TOP/$PACKAGE_JSON" "$YAML_PACKAGE" $list <<'NODE' || fail "invalid YAML"
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const [pkgPath, yamlPackage, ...paths] = process.argv.slice(2);
+const { parse } = createRequire(pkgPath)(yamlPackage);
+for (const path of paths) {
+  try {
+    parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    console.error(`  ${path}: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
+NODE
 }
 
 # Buzz rejects the whole install for a bad manifest, and the host block is
@@ -322,18 +378,42 @@ check_bundle_smoke() {
 	node "$BUNDLE_SMOKE" || fail "dsh bundle smoke scenarios failed"
 }
 
-# Format and lint the plugin's own code with buzz-app's Biome config, so the
-# code it adds reads as the app code it runs next to. Needs the clone for the
-# config, and this checkout's packages for the tool.
+# Exact Biome version pinned in package.json, so an outdated install or a
+# weakened pin in a staged commit fails closed.
+biome_pinned_version() {
+	local pkg="$1"
+	[ ! -L "$pkg" ] && [ -f "$pkg" ] || fail "$PACKAGE_JSON is missing or a symlink at $pkg"
+	require_node
+	node -e '
+const pkg = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const ver = pkg.devDependencies?.[process.argv[2]] ?? pkg.dependencies?.[process.argv[2]];
+if (typeof ver !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(ver)) process.exit(1);
+process.stdout.write(ver);
+' "$pkg" "$BIOME_PACKAGE" || fail "$pkg must pin an exact version for $BIOME_PACKAGE"
+}
+
+# Format and lint every JS/TS/JSON file with buzz-app's Biome config, so the
+# code reads as the app code it runs next to. Needs the clone for the config,
+# and this checkout's pinned packages for the tool.
 check_biome() {
-	local clone list
-	# The bundle in dsh-acp-buzz/ runs inside dsh and keeps that project's style.
-	list="$(files_with ts mjs | grep -v -E '^(\.githooks|dsh-acp-buzz)/' || true)"
+	local clone list pkg_file pinned out actual
+	list="$(files_with ts tsx js mjs cjs json | grep -v -E "$TEMPLATE_HOOK_RE" || true)"
 	[ -n "$list" ] || return 0
 	clone="$(toolchain_clone)" || fail "no buzz-app clone for Biome: set BUZZ_APP_DIR or run $LINK_TOOLCHAIN <clone> (README, Build)"
+	[ ! -L "$clone/$BIOME_CONFIG" ] && [ -f "$clone/$BIOME_CONFIG" ] || fail "$BIOME_CONFIG is missing or a symlink in $clone"
 	[ -x "$REPO_TOP/$BIOME_BIN" ] || fail "no Biome in $REPO_TOP: run 'pnpm install --frozen-lockfile --ignore-scripts' there"
+	# Staged commits are judged against their own pin; pushes use this checkout's pin.
+	pkg_file="$REPO_TOP/$PACKAGE_JSON"
+	[ "$quick" -eq 1 ] && pkg_file="$target/$PACKAGE_JSON"
+	pinned="$(biome_pinned_version "$pkg_file")"
+	out="$("$REPO_TOP/$BIOME_BIN" --version 2>/dev/null || true)"
+	if ! [[ "$out" =~ $BIOME_VERSION_RE ]]; then
+		fail "cannot read the biome version from '$REPO_TOP/$BIOME_BIN --version'"
+	fi
+	actual="${BASH_REMATCH[1]}"
+	[ "$actual" = "$pinned" ] || fail "biome is '$actual', need pinned $pinned (run: pnpm install --frozen-lockfile --ignore-scripts)"
 	# shellcheck disable=SC2086  # one path per word
-	"$REPO_TOP/$BIOME_BIN" check --config-path="$clone/$BIOME_CONFIG" --no-errors-on-unmatched -- $list ||
+	"$REPO_TOP/$BIOME_BIN" check --config-path="$clone/$BIOME_CONFIG" --error-on-warnings -- $list ||
 		fail "biome found format or lint problems; run: $BIOME_BIN check --config-path=$clone/$BIOME_CONFIG --write <file>"
 }
 
@@ -347,11 +427,13 @@ check_markdown() {
 	markdownlint-cli2 --config "$HOOK_LIB/markdownlint.jsonc" -- $list || fail "markdownlint found problems"
 }
 
+# Lizard misparses JSX in .tsx files as unbalanced blocks, so it checks JS and
+# plain TS only; Biome and Semgrep cover .tsx natively.
 check_complexity() {
 	local list
-	list="$(files_with js mjs cjs ts)"
+	list="$(files_with js mjs cjs ts | grep -v -E "$TEMPLATE_HOOK_RE" || true)"
 	[ -n "$list" ] || return 0
-	require_tool "$CHECK" lizard "$LIZARD_MIN_VERSION" 'install lizard (pipx install lizard)' lizard --version
+	require_tool "$CHECK" lizard "$LIZARD_MIN_VERSION" 'install lizard (mise install, see mise.toml)' lizard --version
 	# shellcheck disable=SC2086  # one path per word
 	lizard --CCN "$LIZARD_MAX_CCN" --length "$LIZARD_MAX_LENGTH" --warnings_only $list ||
 		fail "lizard: a function is above CCN $LIZARD_MAX_CCN or $LIZARD_MAX_LENGTH lines"
@@ -361,7 +443,7 @@ check_complexity() {
 # ...) to the generic hook's vendored offline rules.
 check_semgrep() {
 	local list
-	list="$(files_with js mjs cjs ts)"
+	list="$(files_with js mjs cjs ts tsx | grep -v -E "$TEMPLATE_HOOK_RE" || true)"
 	[ -n "$list" ] || return 0
 	require_tool "$CHECK" semgrep "$SEMGREP_MIN_VERSION" 'install semgrep (https://semgrep.dev)' semgrep --version
 	# shellcheck disable=SC2086  # one path per word
@@ -387,6 +469,7 @@ done
 
 check_js_syntax
 check_json
+check_yaml
 check_manifest
 check_bundle_upload_rows
 check_shell

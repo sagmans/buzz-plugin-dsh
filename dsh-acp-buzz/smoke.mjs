@@ -52,8 +52,17 @@ function harness({ compaction = () => undefined } = {}) {
 
 /** Opens SESSION through the bridge, as dsh would answer session/new. */
 async function openSession(h) {
-  await h.bridge.fromClient({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/w", mcpServers: [] } });
-  await h.bridge.fromServer({ jsonrpc: "2.0", id: 1, result: { sessionId: SESSION } });
+  await h.bridge.fromClient({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "session/new",
+    params: { cwd: "/w", mcpServers: [] },
+  });
+  await h.bridge.fromServer({
+    jsonrpc: "2.0",
+    id: 1,
+    result: { sessionId: SESSION },
+  });
 }
 
 const prompt = (id, text, sessionId = SESSION) => ({
@@ -81,7 +90,12 @@ const reasonOf = (message) => message?.error?.data?.reason;
 const scenarios = {
   async "unrelated messages pass through unchanged"() {
     const h = harness();
-    const init = { jsonrpc: "2.0", id: 9, method: "initialize", params: { protocolVersion: 1 } };
+    const init = {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "initialize",
+      params: { protocolVersion: 1 },
+    };
     await h.bridge.fromClient(init);
     assert.deepEqual(h.server, [init]);
     const answer = { jsonrpc: "2.0", id: 9, result: { protocolVersion: 1 } };
@@ -96,9 +110,17 @@ const scenarios = {
     await h.bridge.fromClient(prompt(2, "hi"));
     assert.equal(runIdOf(h.client[0]), RUN_ID);
     assert.equal(last(h.server).id, 2);
-    await h.bridge.fromServer({ jsonrpc: "2.0", id: 2, result: { stopReason: "end_turn" } });
+    await h.bridge.fromServer({
+      jsonrpc: "2.0",
+      id: 2,
+      result: { stopReason: "end_turn" },
+    });
     assert.equal(runIdOf(h.client[1]), null);
-    assert.deepEqual(h.client[2], { jsonrpc: "2.0", id: 2, result: { stopReason: "end_turn" } });
+    assert.deepEqual(h.client[2], {
+      jsonrpc: "2.0",
+      id: 2,
+      result: { stopReason: "end_turn" },
+    });
   },
 
   async "a steer lands only in the running turn of the expected run"() {
@@ -108,16 +130,31 @@ const scenarios = {
     assert.equal(reasonOf(last(h.client)), "no-run");
     await h.bridge.fromClient(prompt(4, "work"));
     await h.bridge.fromClient(steer(5, "not yet"));
-    assert.equal(reasonOf(last(h.client)), "not-running", "an idle agent takes no steer");
+    assert.equal(
+      reasonOf(last(h.client)),
+      "not-running",
+      "an idle agent takes no steer",
+    );
     h.agent.status = "running";
     await h.bridge.fromClient(steer(6, "x", "old-run"));
     assert.equal(reasonOf(last(h.client)), "run-mismatch");
     await h.bridge.fromClient(steer(7, "also check the tests"));
-    assert.deepEqual(last(h.client), { jsonrpc: "2.0", id: 7, result: { outcome: "injected" } });
+    assert.deepEqual(last(h.client), {
+      jsonrpc: "2.0",
+      id: 7,
+      result: { outcome: "injected" },
+    });
     assert.deepEqual(h.agent.steered, [
-      { role: "user", content: [{ type: "text", text: "also check the tests" }], source: { kind: "user" } },
+      {
+        role: "user",
+        content: [{ type: "text", text: "also check the tests" }],
+        source: { kind: "user" },
+      },
     ]);
-    assert.ok(!h.server.some((m) => m.method === STEER_METHOD), "dsh never sees a steer request");
+    assert.ok(
+      !h.server.some((m) => m.method === STEER_METHOD),
+      "dsh never sees a steer request",
+    );
   },
 
   async "a steer is refused after a cancel, for another session and for non-text"() {
@@ -128,11 +165,21 @@ const scenarios = {
     await h.bridge.fromClient(steer(3, "x", RUN_ID, OTHER_SESSION));
     assert.equal(reasonOf(last(h.client)), "unknown-session");
     const image = steer(4, "x");
-    image.params.prompt = [{ type: "image", data: "AA==", mimeType: "image/png" }];
+    image.params.prompt = [
+      { type: "image", data: "AA==", mimeType: "image/png" },
+    ];
     await h.bridge.fromClient(image);
     assert.equal(reasonOf(last(h.client)), "invalid");
-    await h.bridge.fromClient({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: SESSION } });
-    assert.equal(last(h.server).method, "session/cancel", "the cancel still reaches dsh");
+    await h.bridge.fromClient({
+      jsonrpc: "2.0",
+      method: "session/cancel",
+      params: { sessionId: SESSION },
+    });
+    assert.equal(
+      last(h.server).method,
+      "session/cancel",
+      "the cancel still reaches dsh",
+    );
     await h.bridge.fromClient(steer(5, "late"));
     assert.equal(reasonOf(last(h.client)), "cancelled");
     assert.equal(last(h.client).error.code, INVALID_PARAMS);
@@ -143,11 +190,29 @@ const scenarios = {
     const h = harness();
     await openSession(h);
     await h.bridge.fromClient(prompt(2, "work"));
-    const usage = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, reasoningTokens: 3 };
-    h.bridge.onSessionEvent(SESSION, { type: "assistant/message", data: { usage } });
-    h.bridge.onSessionEvent(SESSION, { type: "assistant/message", data: { usage: { inputTokens: 1, outputTokens: 1 } } });
-    h.bridge.onSessionEvent(OTHER_SESSION, { type: "assistant/message", data: { usage } });
-    await h.bridge.fromServer({ jsonrpc: "2.0", id: 2, result: { stopReason: "end_turn" } });
+    const usage = {
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 100,
+      reasoningTokens: 3,
+    };
+    h.bridge.onSessionEvent(SESSION, {
+      type: "assistant/message",
+      data: { usage },
+    });
+    h.bridge.onSessionEvent(SESSION, {
+      type: "assistant/message",
+      data: { usage: { inputTokens: 1, outputTokens: 1 } },
+    });
+    h.bridge.onSessionEvent(OTHER_SESSION, {
+      type: "assistant/message",
+      data: { usage },
+    });
+    await h.bridge.fromServer({
+      jsonrpc: "2.0",
+      id: 2,
+      result: { stopReason: "end_turn" },
+    });
     assert.deepEqual(last(h.client).result.usage, {
       inputTokens: 11,
       outputTokens: 6,
@@ -161,7 +226,12 @@ const scenarios = {
   async "/compact runs dsh's compaction and answers in the Buzz contract"() {
     const calls = [];
     const h = harness({
-      compaction: () => ({ compactNow: async (agent, signal) => (calls.push({ agent, signal }), null) }),
+      compaction: () => ({
+        compactNow: async (agent, signal) => {
+          calls.push({ agent, signal });
+          return null;
+        },
+      }),
     });
     await openSession(h);
     h.client.length = 0;
@@ -169,21 +239,37 @@ const scenarios = {
     await drain();
     assert.equal(calls.length, 1);
     assert.equal(calls[0].agent, h.agent);
-    assert.ok(!h.server.some((m) => m.method === "session/prompt"), "the model never sees /compact");
+    assert.ok(
+      !h.server.some((m) => m.method === "session/prompt"),
+      "the model never sees /compact",
+    );
     assert.equal(h.client[0].params.update.content.text, COMPACT_DONE_TEXT);
-    assert.deepEqual(h.client[1], { jsonrpc: "2.0", id: 2, result: { stopReason: "end_turn" } });
+    assert.deepEqual(h.client[1], {
+      jsonrpc: "2.0",
+      id: 2,
+      result: { stopReason: "end_turn" },
+    });
   },
 
   async "a prompt with more text than /compact stays a model turn"() {
     const calls = [];
-    const h = harness({ compaction: () => ({ compactNow: async () => void calls.push(1) }) });
+    const h = harness({
+      compaction: () => ({ compactNow: async () => void calls.push(1) }),
+    });
     await openSession(h);
     await h.bridge.fromClient(prompt(2, "please run /compact"));
-    await h.bridge.fromServer({ jsonrpc: "2.0", id: 2, result: { stopReason: "end_turn" } });
+    await h.bridge.fromServer({
+      jsonrpc: "2.0",
+      id: 2,
+      result: { stopReason: "end_turn" },
+    });
     await h.bridge.fromClient(prompt(3, " /compact\n"));
     await drain();
     assert.deepEqual(calls, []);
-    assert.deepEqual(h.server.filter((m) => m.method === "session/prompt").map((m) => m.id), [2, 3]);
+    assert.deepEqual(
+      h.server.filter((m) => m.method === "session/prompt").map((m) => m.id),
+      [2, 3],
+    );
   },
 
   async "/compact explains a missing engine, a busy agent and a failed summary"() {
@@ -193,28 +279,52 @@ const scenarios = {
       h.agent.status = status;
       await h.bridge.fromClient(prompt(2, "/compact"));
       await drain();
-      return last(h.client.filter((m) => m.method === "session/update")).params.update.content.text;
+      return last(h.client.filter((m) => m.method === "session/update")).params
+        .update.content.text;
     };
     assert.match(await texts(() => undefined, "idle"), /not available/);
-    assert.match(await texts(() => ({ compactNow: async () => null }), "running"), /not idle/);
+    assert.match(
+      await texts(() => ({ compactNow: async () => null }), "running"),
+      /not idle/,
+    );
     const failing = Object.assign(new Error("no summary"), { code: "summary" });
-    assert.match(await texts(() => ({ compactNow: async () => Promise.reject(failing) }), "idle"), /useful summary/);
+    assert.match(
+      await texts(
+        () => ({ compactNow: async () => Promise.reject(failing) }),
+        "idle",
+      ),
+      /useful summary/,
+    );
   },
 
   async "a cancel stops /compact, and a prompt waits for it"() {
     const h = harness({
       compaction: () => ({
         compactNow: (_agent, signal) =>
-          new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
+          new Promise((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason)),
+          ),
       }),
     });
     await openSession(h);
     await h.bridge.fromClient(prompt(2, "/compact"));
     await h.bridge.fromClient(prompt(3, "real work"));
-    assert.equal(last(h.client).error.code, INVALID_PARAMS, "a prompt during compaction is refused");
-    await h.bridge.fromClient({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: SESSION } });
+    assert.equal(
+      last(h.client).error.code,
+      INVALID_PARAMS,
+      "a prompt during compaction is refused",
+    );
+    await h.bridge.fromClient({
+      jsonrpc: "2.0",
+      method: "session/cancel",
+      params: { sessionId: SESSION },
+    });
     await h.bridge.dispose();
-    assert.deepEqual(last(h.client), { jsonrpc: "2.0", id: 2, result: { stopReason: "cancelled" } });
+    assert.deepEqual(last(h.client), {
+      jsonrpc: "2.0",
+      id: 2,
+      result: { stopReason: "cancelled" },
+    });
   },
 };
 
@@ -228,5 +338,7 @@ for (const [name, run] of Object.entries(scenarios)) {
     console.error(`FAIL ${name}\n${error?.stack ?? error}`);
   }
 }
-console.log(`${Object.keys(scenarios).length - failed} passed, ${failed} failed`);
+console.log(
+  `${Object.keys(scenarios).length - failed} passed, ${failed} failed`,
+);
 process.exit(failed ? 1 : 0);

@@ -33,7 +33,7 @@ behavior.
 | `pnpm-workspace.yaml` | The minimum release age for those packages. |
 | `smoke/run.mjs` | End-to-end smoke run: the built plugin against the stand-in, or a real dsh. |
 | `scripts/fake-acp.mjs` | The stand-in dsh ACP server, with and without the bundle. |
-| `dsh-acp-buzz/` | dsh profile bundle: steering, run ids, compaction, usage. It runs inside dsh and keeps that project's style. It has its own `smoke.mjs`. |
+| `dsh-acp-buzz/` | dsh profile bundle: steering, run ids, compaction, usage. It runs inside dsh and has its own `smoke.mjs`. |
 | `scripts/setup-buzz-profile`, `scripts/buzz-profile.patch.yml` | Makes the `buzz` dsh profile that agents run on. |
 | `scripts/sync-buzz-catalog.mjs` | Copies the desktop profile's `llm-pi-ai` model catalog into the Buzz profile. |
 | `scripts/check` | All repository checks. The Git hooks call it. |

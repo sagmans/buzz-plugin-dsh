@@ -4,7 +4,7 @@
 // reads goose's database; this one reads dsh's session files
 // (./session-files.ts), and the plugin's local record (./recorder.ts,
 // ./history.ts) for a turn as it streams and for a file it cannot read.
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import activityStyles from "@app/features/agents/ActivityLayout.module.css";
 import { ActivityTranscript } from "@app/features/agents/ActivityTranscript";
 import {
@@ -66,10 +66,12 @@ function useRead<T>(
     value?: T;
     error?: string;
   }>({});
+  const readRef = useRef(read);
+  readRef.current = read;
   // `key` names what `read` reads: a new closure alone must not read again.
   useEffect(() => {
     const abort = new AbortController();
-    read(abort.signal).then(
+    readRef.current(abort.signal).then(
       (value) => {
         if (!abort.signal.aborted) setState({ key, value });
       },
