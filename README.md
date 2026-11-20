@@ -199,7 +199,8 @@ then build and run `scripts/check`.
 
 ## Build
 
-You need Node.js 24 or newer, pnpm and a buzz-app clone at the pinned revision.
+You need the Node.js and pnpm releases pinned in `mise.toml` (24.22.3+ and
+12.22.0+) and a buzz-app clone at the pinned revision.
 The clone needs no install: the build uses this repository's Vite, TypeScript
 and Biome.
 

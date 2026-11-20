@@ -77,11 +77,13 @@ SEMGREP_TIMEOUT_SECONDS=300
 TRIVY_TIMEOUT_SECONDS=300
 BUILD_TIMEOUT_SECONDS=600
 PNPM_INSTALL_TIMEOUT_SECONDS=300
-PNPM_MIN_VERSION=12.4.2
 SMOKE_TIMEOUT_SECONDS=600
 SEMGREP_REGISTRY_CONFIG=p/javascript
+# Security floors: carry the November 2026 Node.js CVE fixes and pnpm's
+# minimumReleaseAge/trustPolicy bypass and undici fixes.
+NODE_MIN_VERSION=24.22.3
+PNPM_MIN_VERSION=12.22.0
 # Minimum versions: the releases these flags and rule sets were verified with.
-NODE_MIN_VERSION=24.0.0
 SHELLCHECK_MIN_VERSION=0.10.0
 SHFMT_MIN_VERSION=3.8.0
 MARKDOWNLINT_MIN_VERSION=0.23.2
@@ -167,7 +169,7 @@ files_with() {
 }
 
 require_node() {
-	require_tool "$CHECK" node "$NODE_MIN_VERSION" 'install Node.js 24 or newer (mise install, see mise.toml)' node --version
+	require_tool "$CHECK" node "$NODE_MIN_VERSION" 'install Node.js (mise install, see mise.toml)' node --version
 }
 
 # Every JS file must parse, so neither a contributor nor the hooks meet a
